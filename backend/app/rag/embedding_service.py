@@ -20,8 +20,11 @@ class BgeM3EmbeddingService:
     def _model_path(self) -> str:
         path = settings.BGE_M3_MODEL_PATH.strip()
         if not path:
-            raise EmbeddingError("未配置 BGE_M3_MODEL_PATH，请在后端 .env 中填写本地 bge-m3 路径")
-        return str(Path(path).resolve())
+            return "BAAI/bge-m3"
+        local_path = Path(path)
+        if local_path.exists():
+            return str(local_path.resolve())
+        return "BAAI/bge-m3"
 
     def _load_model(self):
         if self._model is not None:

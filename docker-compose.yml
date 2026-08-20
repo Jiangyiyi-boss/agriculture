@@ -55,6 +55,7 @@ services:
       - MILVUS_HOST=milvus
       - MILVUS_PORT=19530
       - BGE_M3_DEVICE=cpu
+      - BGE_M3_MODEL_PATH=BAAI/bge-m3
     volumes:
       - backend_uploads:/app/uploads
       - bge_m3_model:/app/backend/models
