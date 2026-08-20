@@ -19,11 +19,20 @@ WORKDIR /app
 # 先拷依赖文件，利用 Docker 缓存
 COPY pyproject.toml uv.lock ./
 
-# 同步依赖（CPU-only PyTorch，服务器无GPU，避免下载2GB+ CUDA包）
+# 创建 venv
+RUN uv venv .venv
+
+# 导出依赖列表，移除 torch 行（单独装 CPU 版，避免下载2GB+ CUDA/nvidia包）
+RUN uv export --no-hashes --no-dev -o requirements.txt && \
+    sed -i '/^torch/d' requirements.txt
+
+# 先单独装 CPU-only PyTorch（~200MB，无 CUDA/nvidia 依赖）
+RUN .venv/bin/pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# 装其他依赖（阿里云源加速，torch 已满足会跳过）
 RUN UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
-    UV_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu \
-    UV_INDEX_STRATEGY=unsafe-best-match \
-    uv sync --no-dev
+    VIRTUAL_ENV=/app/.venv \
+    uv pip install -r requirements.txt
 
 # 拷贝源码
 COPY app/ ./app/
