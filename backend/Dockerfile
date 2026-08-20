@@ -19,8 +19,11 @@ WORKDIR /app
 # 先拷依赖文件，利用 Docker 缓存
 COPY pyproject.toml uv.lock ./
 
-# 同步依赖（用阿里云 PyPI 源加速）
-RUN UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ uv sync --frozen --no-dev
+# 同步依赖（CPU-only PyTorch，服务器无GPU，避免下载2GB+ CUDA包）
+RUN UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    UV_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu \
+    UV_INDEX_STRATEGY=unsafe-best-match \
+    uv sync --no-dev
 
 # 拷贝源码
 COPY app/ ./app/
