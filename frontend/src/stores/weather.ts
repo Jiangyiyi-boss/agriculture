@@ -303,30 +303,40 @@ export const useWeatherStore = defineStore('weather', () => {
     let address: any
     let approximate = false
 
-    try {
-      const position = await getAmapPosition(AMap)
-      address = await getAmapAddress(AMap, position.lng, position.lat)
-      console.info('[定位] 策略1（高德Geolocation）成功', address)
-    } catch (amapError: any) {
-      // AMap 定位失败（桌面无 GPS 常见）→ 尝试浏览器原生定位 + 高德逆地理编码
-      // 浏览器在 WiFi 环境下可通过三角定位拿到区县级精度经纬度
-      console.warn('[定位] 策略1失败，尝试策略2（浏览器原生定位）', amapError?.message)
+    // 非安全源（HTTP + IP）下浏览器 Geolocation 被禁用，直接走 IP 城市定位
+    if (!window.isSecureContext) {
+      console.info('[定位] 非安全源（HTTP），跳过浏览器定位，直接使用 IP 城市定位')
+      const localCity = await getAmapLocalCity(AMap)
+      approximate = true
+      address = {
+        province: localCity.province || '',
+        city: localCity.city || '',
+        district: '',
+        adcode: localCity.adcode || '',
+      }
+    } else {
       try {
-        const coords = await getBrowserPosition()
-        const converted = await convertToAmapLngLat(AMap, coords.coords.longitude, coords.coords.latitude)
-        address = await getAmapAddress(AMap, converted.lng, converted.lat)
-        console.info('[定位] 策略2（浏览器定位+逆地理编码）成功', address)
-      } catch (browserError: any) {
-        // 浏览器定位也失败 → 降级到 IP 城市级定位（无区县）
-        console.warn('[定位] 策略2失败，降级策略3（IP城市定位）', browserError?.message)
-        error.value = friendlyLocationError(amapError?.message)
-        const localCity = await getAmapLocalCity(AMap)
-        approximate = true
-        address = {
-          province: localCity.province || '',
-          city: localCity.city || '',
-          district: '',
-          adcode: localCity.adcode || '',
+        const position = await getAmapPosition(AMap)
+        address = await getAmapAddress(AMap, position.lng, position.lat)
+        console.info('[定位] 策略1（高德Geolocation）成功', address)
+      } catch (amapError: any) {
+        console.warn('[定位] 策略1失败，尝试策略2（浏览器原生定位）', amapError?.message)
+        try {
+          const coords = await getBrowserPosition()
+          const converted = await convertToAmapLngLat(AMap, coords.coords.longitude, coords.coords.latitude)
+          address = await getAmapAddress(AMap, converted.lng, converted.lat)
+          console.info('[定位] 策略2（浏览器定位+逆地理编码）成功', address)
+        } catch (browserError: any) {
+          console.warn('[定位] 策略2失败，降级策略3（IP城市定位）', browserError?.message)
+          error.value = friendlyLocationError(amapError?.message)
+          const localCity = await getAmapLocalCity(AMap)
+          approximate = true
+          address = {
+            province: localCity.province || '',
+            city: localCity.city || '',
+            district: '',
+            adcode: localCity.adcode || '',
+          }
         }
       }
     }
@@ -389,7 +399,12 @@ export const useWeatherStore = defineStore('weather', () => {
         payload = await initWithAmap()
       } catch (caught) {
         console.warn('高德定位天气获取失败，尝试切换后端定位天气接口', caught)
-        payload = await initWithBackend()
+        // 后端接口也需要浏览器定位，非安全源下跳过
+        if (window.isSecureContext) {
+          payload = await initWithBackend()
+        } else {
+          throw caught
+        }
       }
       data.value = payload
       located.value = true
