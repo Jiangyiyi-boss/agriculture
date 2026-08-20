@@ -27,6 +27,20 @@ from app.core.database import SessionLocal, engine, Base
 from app.models import CropSuitability, SoilData, AdminDistrict
 
 
+def get_data_dir() -> Path:
+    """获取数据目录：优先环境变量，其次容器路径 /app/data，最后本地开发路径。"""
+    env_path = os.environ.get("DATA_DIR")
+    if env_path:
+        return Path(env_path)
+    container_path = Path("/app/data")
+    if container_path.exists():
+        return container_path
+    return Path(__file__).resolve().parents[2] / "data"
+
+
+DATA_DIR = get_data_dir()
+
+
 # ---------------------------------------------------------------------------
 # 解析工具
 # ---------------------------------------------------------------------------
@@ -79,7 +93,7 @@ def parse_cycle(text: str) -> tuple[int | None, int | None, bool]:
 # ---------------------------------------------------------------------------
 
 def import_crop_suitability(db) -> int:
-    csv_path = Path("d:/agriculture/data/soil/作物适宜性数据.csv")
+    csv_path = DATA_DIR / "soil" / "作物适宜性数据.csv"
     if not csv_path.exists():
         print(f"[SKIP] 文件不存在: {csv_path}")
         return 0
@@ -140,7 +154,7 @@ def import_crop_suitability(db) -> int:
 # ---------------------------------------------------------------------------
 
 def import_soil_data(db) -> int:
-    xlsx_path = Path("d:/agriculture/data/soil/土壤数据汇总表.xlsx")
+    xlsx_path = DATA_DIR / "soil" / "土壤数据汇总表.xlsx"
     if not xlsx_path.exists():
         print(f"[SKIP] 文件不存在: {xlsx_path}")
         return 0
@@ -186,7 +200,7 @@ def import_soil_data(db) -> int:
 # ---------------------------------------------------------------------------
 
 def import_admin_district(db) -> int:
-    xlsx_path = Path("d:/agriculture/data/soil/行政区划映射表.xlsx")
+    xlsx_path = DATA_DIR / "soil" / "行政区划映射表.xlsx"
     if not xlsx_path.exists():
         print(f"[SKIP] 文件不存在: {xlsx_path}")
         return 0

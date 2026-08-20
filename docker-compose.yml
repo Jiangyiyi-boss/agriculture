@@ -26,7 +26,7 @@ services:
       - "6379:6379"
 
   milvus:
-    image: milvusdb/milvus:v2.6.0
+    image: milvusdb/milvus:v2.4.13
     container_name: huinongbao-milvus
     restart: unless-stopped
     command: ["milvus", "run", "standalone"]
@@ -55,10 +55,10 @@ services:
       - MILVUS_HOST=milvus
       - MILVUS_PORT=19530
       - BGE_M3_DEVICE=cpu
-      - BGE_M3_MODEL_PATH=BAAI/bge-m3
+      - BGE_M3_MODEL_PATH=/app/models/bge-m3
     volumes:
       - backend_uploads:/app/uploads
-      - bge_m3_model:/app/backend/models
+      - ./bge-m3:/app/models/bge-m3:ro
       - ./data:/app/data:ro
     ports:
       - "8000:8000"
