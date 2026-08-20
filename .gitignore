@@ -1,0 +1,28 @@
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/pest_debug.log
+backend/uploads/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Milvus 数据（可从 data/ Excel 重新导入）
+deploy/milvus/volumes/
+
+# 环境配置（含密钥，不提交）
+.env
+backend/.env
+frontend/.env
+
+# IDE
+.idea/
+.vscode/
+.trae/
+
+# 系统
+.DS_Store
+Thumbs.db

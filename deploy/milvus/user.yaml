@@ -1,0 +1,3 @@
+# Extra config to override default milvus.yaml
+common:
+  storageType: local

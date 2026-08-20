@@ -1,0 +1,206 @@
+:root {
+  --farm-bg: #f4faf5;
+  --farm-panel: #ffffff;
+  --farm-panel-soft: #f0f7f1;
+  --farm-line: #d8e6d9;
+  --farm-text: #071a13;
+  --farm-muted: #5f7068;
+  --farm-green: #168744;
+  --farm-green-dark: #087a4f;
+  --farm-green-soft: #e4f1e8;
+  --farm-yellow-soft: #fbf2d7;
+  --farm-blue-soft: #dff5f8;
+  --farm-red-soft: #fae3df;
+  --farm-shadow: 0 3px 10px rgba(18, 46, 31, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--farm-bg);
+  color: var(--farm-text);
+  font-family: "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+}
+
+/* ========== 滚动条美化（隐藏原生样式并替换为细条） ========== */
+* {
+  scrollbar-width: thin;                /* Firefox：细条 */
+  scrollbar-color: rgba(22, 135, 68, .35) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;              /* 轨道透明，不留灰条 */
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(22, 135, 68, .28);   /* 绿色细条 */
+  border-radius: 6px;
+  transition: background .2s;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(22, 135, 68, .55);
+}
+
+*::-webkit-scrollbar-button {
+  display: none;                        /* 隐藏上下箭头 */
+}
+
+#app {
+  min-height: 100%;
+}
+
+a {
+  color: inherit;
+}
+
+.el-card {
+  border-color: var(--farm-line);
+  border-radius: 22px;
+  box-shadow: var(--farm-shadow);
+}
+
+.el-card.is-hover-shadow:hover {
+  box-shadow: 0 8px 22px rgba(18, 46, 31, 0.14);
+}
+
+.el-button {
+  font-weight: 700;
+}
+
+.el-button--primary {
+  --el-button-bg-color: var(--farm-green);
+  --el-button-border-color: var(--farm-green);
+  --el-button-hover-bg-color: #0d7e3e;
+  --el-button-hover-border-color: #0d7e3e;
+  --el-button-active-bg-color: #076c35;
+  --el-button-active-border-color: #076c35;
+  border-radius: 14px;
+}
+
+.el-radio-button__inner {
+  min-width: 70px;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: #e9f1e5;
+  color: var(--farm-text);
+  font-size: 16px;
+  font-weight: 800;
+  box-shadow: none !important;
+}
+
+.el-radio-button {
+  margin-right: 12px;
+}
+
+.el-radio-button:first-child .el-radio-button__inner,
+.el-radio-button:last-child .el-radio-button__inner {
+  border-radius: 999px !important;
+}
+
+.el-radio-button__original-radio:checked + .el-radio-button__inner {
+  background: var(--farm-green);
+  color: #fff;
+}
+
+.el-tag {
+  border: 0;
+  font-weight: 800;
+}
+
+.el-tag--success {
+  --el-tag-bg-color: var(--farm-green-soft);
+  --el-tag-text-color: var(--farm-green);
+}
+
+.el-tag--warning {
+  --el-tag-bg-color: #eef9d1;
+  --el-tag-text-color: #148c35;
+}
+
+.el-tag--danger {
+  --el-tag-bg-color: #ffe5e7;
+  --el-tag-text-color: #ef3434;
+}
+
+.el-tag--primary {
+  --el-tag-bg-color: #fff1cf;
+  --el-tag-text-color: #d38b00;
+}
+
+.el-tag--info {
+  --el-tag-bg-color: #edf4ee;
+  --el-tag-text-color: #5f7068;
+}
+
+.page-shell,
+.home-page {
+  color: var(--farm-text);
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 34px;
+}
+
+.page-title {
+  margin: 0;
+  color: var(--farm-text);
+  font-size: 34px;
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.page-desc {
+  margin: 10px 0 0;
+  color: var(--farm-muted);
+  font-size: 19px;
+  line-height: 1.5;
+}
+
+.filter-bar {
+  margin-bottom: 30px;
+}
+
+.empty-text {
+  padding: 48px 0;
+  text-align: center;
+  color: #87958d;
+  font-size: 15px;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    margin-bottom: 24px;
+  }
+
+  .page-title {
+    font-size: 28px;
+  }
+
+  .page-desc {
+    font-size: 15px;
+  }
+
+  .el-radio-button {
+    margin: 0 8px 8px 0;
+  }
+
+  .el-radio-button__inner {
+    min-width: 62px;
+    font-size: 14px;
+  }
+}

@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+pest_debug.log
+uploads/
+models/
+.env
