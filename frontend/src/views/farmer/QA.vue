@@ -2069,6 +2069,11 @@ onBeforeUnmount(() => {
   display: none;
 }
 
+/* 隐藏误生成的水平线（LLM 输出的 —— 被 GFM 解析为 <hr>） */
+.message-markdown :deep(hr) {
+  display: none;
+}
+
 /* 段落间距收紧 */
 .message-markdown :deep(p) {
   margin: 6px 0;
