@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.core.database import engine, Base, SessionLocal
 
 # 配置日志：病虫害 RAG 调试日志同时输出到控制台和文件
-_file_handler = logging.FileHandler("D:/agriculture/backend/pest_debug.log", encoding="utf-8")
+_file_handler = logging.FileHandler("/app/pest_debug.log", encoding="utf-8")
 _file_handler.setLevel(logging.INFO)
 _stream_handler = logging.StreamHandler()
 _stream_handler.setLevel(logging.INFO)

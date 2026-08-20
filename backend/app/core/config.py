@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     VL_BASE_URL: str = ""
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
-    DEEPSEEK_MODEL: str = "deepseek-v4-pro"
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
     TAVILY_API_KEY: str = ""
     AI_IMAGE_MAX_MB: int = 5
     AI_IMAGE_MAX_COUNT: int = 5
@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     AI_REDIS_MAX_ROUNDS: int = 10
 
     # 病虫害 RAG
-    BGE_M3_DEVICE: str = "auto"
+    BGE_M3_DEVICE: str = "cpu"
     BGE_M3_MODEL_PATH: str = ""
     EMBEDDING_DIM: int = 1024
     BGE_M3_BATCH_SIZE: int = 16

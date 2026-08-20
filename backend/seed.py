@@ -32,7 +32,7 @@ try:
         name="系统管理员", role=3, region="广东省 广州市", status=1,
     )
     expert1 = User(
-        phone="", password_hash=hash_password("expert123"),
+        phone="13800000002", password_hash=hash_password("expert123"),
         name="张农技", role=2, specialty="水稻 · 病虫害防治", title="高级农艺师",
         bio="从事农业技术推广工作15年，擅长水稻病虫害诊断与防治。", region="广东省 广州市", status=1,
     )
@@ -48,7 +48,7 @@ try:
     )
     farmer = User(
         phone="13812346621", password_hash=hash_password("farmer123"),
-        name="陈志强", role=1, region="广东省 广州市 番禺区", area="32 亩",
+        name="陈志强", role=1, region="广东省 广州市 番禺区",
         bio="从事水稻、蔬菜种植 12 年，希望用科技把地种得更好。", status=1,
     )
     db.add_all([admin, expert1, expert2, expert3, farmer])

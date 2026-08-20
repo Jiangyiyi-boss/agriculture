@@ -54,6 +54,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - MILVUS_HOST=milvus
       - MILVUS_PORT=19530
+      - BGE_M3_DEVICE=cpu
     volumes:
       - backend_uploads:/app/uploads
       - bge_m3_model:/app/backend/models
