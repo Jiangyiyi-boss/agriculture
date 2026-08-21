@@ -128,7 +128,6 @@
       </el-form>
 
       <template #footer>
-        <el-button @click="resetForm">重置</el-button>
         <el-button type="success" :loading="saving" @click="handleSave">保存修改</el-button>
       </template>
     </el-dialog>
