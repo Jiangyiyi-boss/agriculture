@@ -27,8 +27,10 @@ RUN uv export --no-hashes --no-dev -o requirements.txt && \
     sed -i '/^torch/d' requirements.txt
 
 # 先单独装 CPU-only PyTorch（~200MB，无 CUDA/nvidia 依赖）
+# 装完删除 triton 的 nvidia 后端文件（CPU 环境用不上，节省 ~1GB 空间）
 RUN VIRTUAL_ENV=/app/.venv \
-    uv pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+    uv pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+    rm -rf /app/.venv/lib/python3.11/site-packages/triton/backends/nvidia
 
 # 装其他依赖（阿里云源加速，torch 已满足会跳过）
 RUN UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
