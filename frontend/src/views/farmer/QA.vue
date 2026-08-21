@@ -592,12 +592,6 @@ const totalUnreadForBadge = computed(() => notificationStore.unreadCount)
 
 function enterMode(nextMode: Exclude<AskMode, null>) {
   mode.value = nextMode
-  if (nextMode === 'ai') {
-    // 进入 AI 模式时自动选中最近一次对话，方便查看历史
-    if (!activeConversationId.value && aiConversations.value.length) {
-      selectConversation(aiConversations.value[0].id)
-    }
-  }
   if (nextMode === 'expert') {
     stopPolling()
     expertView.value = 'list'
@@ -1266,10 +1260,6 @@ async function openHistory(c: any) {
 
 onMounted(async () => {
   await Promise.all([fetchAIConversations(), fetchExperts(), fetchArchive()])
-  // 直接以 ?mode=ai 进入时，列表加载完成后自动选中最近一次对话
-  if (mode.value === 'ai' && !activeConversationId.value && aiConversations.value.length) {
-    selectConversation(aiConversations.value[0].id)
-  }
 })
 
 onBeforeUnmount(() => {
@@ -2066,11 +2056,6 @@ onBeforeUnmount(() => {
 
 /* 列表项内的 <br> 不要撑开间距 */
 .message-markdown :deep(li br) {
-  display: none;
-}
-
-/* 隐藏误生成的水平线（LLM 输出的 —— 被 GFM 解析为 <hr>） */
-.message-markdown :deep(hr) {
   display: none;
 }
 
