@@ -56,6 +56,8 @@ export const api = {
   },
   getLocationWeather: (longitude: number, latitude: number) =>
     http.get('/location/weather', { params: { longitude, latitude } }).then(r => r.data),
+  getWeatherByRegion: (region: string) =>
+    http.get('/location/weather/by-region', { params: { region } }).then(r => r.data),
 
   // ========== Lands ==========
   getLands: () => http.get('/lands').then(r => r.data),

@@ -59,24 +59,8 @@ def _compact_region(address: dict[str, Any]) -> str:
     return " ".join(part for part in [province, city, district] if part)
 
 
-@router.get("/weather")
-async def get_location_weather(
-    longitude: float = Query(..., ge=-180, le=180),
-    latitude: float = Query(..., ge=-90, le=90),
-):
-    """Return reverse-geocoded region plus live weather and forecast."""
-    location = f"{longitude:.6f},{latitude:.6f}"
-    regeo = await _amap_get(
-        "/geocode/regeo",
-        {"location": location, "radius": 1000, "extensions": "base"},
-    )
-    address = regeo.get("regeocode", {}).get("addressComponent", {})
-    adcode = str(address.get("adcode") or "")
-    region = _compact_region(address)
-
-    if not adcode:
-        raise HTTPException(status_code=502, detail="无法解析当前位置")
-
+async def _fetch_weather_by_adcode(adcode: str, region: str = "") -> dict[str, Any]:
+    """用 adcode 查实时天气 + 预报，region 为展示用地区名。"""
     live_payload = await _amap_get("/weather/weatherInfo", {"city": adcode, "extensions": "base"})
     forecast_payload = await _amap_get("/weather/weatherInfo", {"city": adcode, "extensions": "all"})
 
@@ -86,12 +70,12 @@ async def get_location_weather(
     casts = (forecasts[0].get("casts") if forecasts else []) or []
 
     return {
-        "province": address.get("province") or "",
-        "city": "" if isinstance(address.get("city"), list) else (address.get("city") or ""),
-        "district": "" if isinstance(address.get("district"), list) else (address.get("district") or ""),
+        "province": "",
+        "city": "",
+        "district": "",
         "adcode": adcode,
-        "region": region,
-        "formatted_address": regeo.get("regeocode", {}).get("formatted_address") or region,
+        "region": region or adcode,
+        "formatted_address": region or adcode,
         "live": {
             "weather": live.get("weather") or "",
             "temperature": live.get("temperature") or "",
@@ -114,6 +98,49 @@ async def get_location_weather(
             for cast in casts[:4]
         ],
     }
+
+
+@router.get("/weather")
+async def get_location_weather(
+    longitude: float = Query(..., ge=-180, le=180),
+    latitude: float = Query(..., ge=-90, le=90),
+):
+    """Return reverse-geocoded region plus live weather and forecast."""
+    location = f"{longitude:.6f},{latitude:.6f}"
+    regeo = await _amap_get(
+        "/geocode/regeo",
+        {"location": location, "radius": 1000, "extensions": "base"},
+    )
+    address = regeo.get("regeocode", {}).get("addressComponent", {})
+    adcode = str(address.get("adcode") or "")
+    region = _compact_region(address)
+
+    if not adcode:
+        raise HTTPException(status_code=502, detail="无法解析当前位置")
+
+    payload = await _fetch_weather_by_adcode(adcode, region)
+    payload["province"] = address.get("province") or ""
+    payload["city"] = "" if isinstance(address.get("city"), list) else (address.get("city") or "")
+    payload["district"] = "" if isinstance(address.get("district"), list) else (address.get("district") or "")
+    payload["formatted_address"] = regeo.get("regeocode", {}).get("formatted_address") or region
+    return payload
+
+
+@router.get("/weather/by-region")
+async def get_weather_by_region(
+    region: str = Query(..., min_length=1, max_length=100),
+):
+    """按地区名查天气（用于 HTTP 环境下浏览器定位不可用时，回退到用户资料中的地区）。"""
+    geo = geocode_address_sync(region)
+    if not geo or not geo.get("adcode"):
+        raise HTTPException(status_code=502, detail="无法解析该地区")
+
+    payload = await _fetch_weather_by_adcode(geo["adcode"], region)
+    payload["province"] = geo.get("province") or ""
+    payload["city"] = geo.get("city") or ""
+    payload["district"] = geo.get("district") or ""
+    payload["formatted_address"] = region
+    return payload
 
 
 def geocode_address_sync(address: str, bias: str = "") -> dict[str, Any] | None:

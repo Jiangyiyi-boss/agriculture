@@ -380,7 +380,7 @@ function weatherIconFor(icon: string) {
 }
 
 onMounted(async () => {
-  weatherStore.init()
+  weatherStore.init(false, auth.user?.region || '')
   loadPlans()
   try { articles.value = await api.getArticles() } catch {}
   try { crops.value = await api.getCrops() } catch {}

@@ -385,7 +385,7 @@ export const useWeatherStore = defineStore('weather', () => {
     )
   }
 
-  async function init(force = false) {
+  async function init(force = false, fallbackRegion = '') {
     if (loading.value) return
     if (!force && data.value) return
     if (!force) readCache()
@@ -395,15 +395,27 @@ export const useWeatherStore = defineStore('weather', () => {
     error.value = ''
     try {
       let payload: WeatherPayload
-      try {
-        payload = await initWithAmap()
-      } catch (caught) {
-        console.warn('高德定位天气获取失败，尝试切换后端定位天气接口', caught)
-        // 后端接口也需要浏览器定位，非安全源下跳过
-        if (window.isSecureContext) {
-          payload = await initWithBackend()
-        } else {
-          throw caught
+      // HTTP（非安全源）环境下浏览器精确定位不可用：
+      // 优先用用户资料里的精确地区查天气（能到区县级），没有才走 IP 城市定位
+      if (!window.isSecureContext && fallbackRegion) {
+        console.info('[定位] 非安全源（HTTP），使用用户资料地区查天气:', fallbackRegion)
+        try {
+          payload = await api.getWeatherByRegion(fallbackRegion)
+        } catch (regionError: any) {
+          console.warn('[定位] 用户地区查天气失败，降级到 IP 城市定位', regionError?.message)
+          payload = await initWithAmap()
+        }
+      } else {
+        try {
+          payload = await initWithAmap()
+        } catch (caught) {
+          console.warn('高德定位天气获取失败，尝试切换后端定位天气接口', caught)
+          // 后端接口也需要浏览器定位，非安全源下跳过
+          if (window.isSecureContext) {
+            payload = await initWithBackend()
+          } else {
+            throw caught
+          }
         }
       }
       data.value = payload
