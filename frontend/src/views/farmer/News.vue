@@ -14,7 +14,10 @@
     </div>
 
     <div v-if="loading" class="loading-text">加载中...</div>
-    <div v-else-if="!articles.length" class="empty-text">该分类暂无资讯</div>
+    <div v-else-if="!articles.length" class="empty-news">
+      <SproutIcon :size="48" variant="light" />
+      <p class="empty-news-text">还没有资讯</p>
+    </div>
 
     <!-- 文章卡片网格 -->
     <div v-else class="card-grid">

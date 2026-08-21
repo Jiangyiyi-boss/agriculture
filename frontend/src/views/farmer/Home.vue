@@ -153,18 +153,23 @@
           <h2 class="section-title">三农资讯</h2>
           <router-link to="/news" class="more-link">更多 &gt;</router-link>
         </div>
-        <div v-if="articles.length === 0" class="empty-text">暂无资讯</div>
-        <div v-else class="article-card">
-          <router-link
-            v-for="a in articles.slice(0, 4)"
-            :key="a.id"
-            :to="`/news/${a.id}`"
-            class="article-item"
-          >
-            <span class="article-title">{{ a.title }}</span>
-            <span class="article-date">{{ a.date?.slice(5) }}</span>
-          </router-link>
-        </div>
+        <el-card class="news-card">
+          <div v-if="articles.length === 0" class="empty-news">
+            <SproutIcon :size="48" variant="light" />
+            <p class="empty-news-text">还没有资讯</p>
+          </div>
+          <div v-else class="article-card">
+            <router-link
+              v-for="a in articles.slice(0, 4)"
+              :key="a.id"
+              :to="`/news/${a.id}`"
+              class="article-item"
+            >
+              <span class="article-title">{{ a.title }}</span>
+              <span class="article-date">{{ a.date?.slice(5) }}</span>
+            </router-link>
+          </div>
+        </el-card>
       </el-col>
 
       <!-- 我的种植 -->
@@ -971,9 +976,6 @@ onMounted(async () => {
 .quick-label { font-size: 22px; font-weight: 900; color: #08170f; margin: 12px 0 0; }
 
 .article-card {
-  background: #fff;
-  border-radius: 16px;
-  border: 1px solid rgba(34, 94, 56, .1);
   overflow: hidden;
 }
 .article-item {
@@ -1012,6 +1014,26 @@ onMounted(async () => {
   border-radius: 16px;
   border-color: rgba(34, 94, 56, .12);
   box-shadow: 0 6px 16px rgba(26, 71, 43, .10);
+}
+
+.news-card {
+  border-radius: 16px;
+  border-color: rgba(34, 94, 56, .12);
+  box-shadow: 0 6px 16px rgba(26, 71, 43, .10);
+}
+
+.empty-news {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 20px 32px;
+}
+
+.empty-news-text {
+  font-size: 15px;
+  color: #999;
+  margin: 0;
 }
 
 .crop-item { padding: 14px 0; border-bottom: 1px solid #f0f0f0; }
