@@ -27,7 +27,8 @@ RUN uv export --no-hashes --no-dev -o requirements.txt && \
     sed -i '/^torch/d' requirements.txt
 
 # 先单独装 CPU-only PyTorch（~200MB，无 CUDA/nvidia 依赖）
-RUN .venv/bin/pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN VIRTUAL_ENV=/app/.venv \
+    uv pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
 # 装其他依赖（阿里云源加速，torch 已满足会跳过）
 RUN UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
