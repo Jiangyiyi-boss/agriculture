@@ -148,7 +148,7 @@
 
     <el-row :gutter="16">
       <!-- 三农资讯 -->
-      <el-col :lg="16" :span="24">
+      <el-col :lg="12" :span="24">
         <div class="section-header">
           <h2 class="section-title">三农资讯</h2>
           <router-link to="/news" class="more-link">更多 &gt;</router-link>
@@ -173,7 +173,7 @@
       </el-col>
 
       <!-- 我的种植 -->
-      <el-col :lg="8" :span="24">
+      <el-col :lg="12" :span="24">
         <div class="section-header">
           <h2 class="section-title">我的种植</h2>
           <router-link to="/crops" class="more-link">全部 &gt;</router-link>

@@ -29,7 +29,7 @@ type WeatherPayload = {
 
 const WEEK_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const CACHE_KEY = 'amap_weather_cache_v2'
-const CACHE_MAX_AGE = 30 * 60 * 1000
+const CACHE_MAX_AGE = 15 * 60 * 1000
 const AMAP_SCRIPT_ID = 'amap-js-sdk'
 
 declare global {
