@@ -118,8 +118,13 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="addDialogVisible = false">取消</el-button>
-        <el-button type="success" :loading="addSubmitting" :disabled="!lands.length" @click="submitAdd">保存</el-button>
+        <template v-if="!lands.length">
+          <el-button type="success" @click="goAddLand">确定</el-button>
+        </template>
+        <template v-else>
+          <el-button @click="addDialogVisible = false">取消</el-button>
+          <el-button type="success" :loading="addSubmitting" @click="submitAdd">保存</el-button>
+        </template>
       </template>
     </el-dialog>
   </div>
@@ -127,13 +132,14 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { api } from '@/api/client'
 import { Plus, Location, Calendar, Select } from '@element-plus/icons-vue'
 import SproutIcon from '@/components/SproutIcon.vue'
 
 const route = useRoute()
+const router = useRouter()
 const crops = ref<any[]>([])
 const lands = ref<any[]>([])
 
@@ -211,6 +217,11 @@ function openAddDialog() {
   }
   resetAddForm()
   addDialogVisible.value = true
+}
+
+function goAddLand() {
+  addDialogVisible.value = false
+  router.push('/lands')
 }
 
 async function submitAdd() {
