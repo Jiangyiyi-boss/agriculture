@@ -197,31 +197,29 @@
                   multiple
                   @change="handleImageChange"
                 />
-                <div class="input-toolbar">
-                  <button class="im-img-btn-inner-left" type="button" title="上传图片" @click="imageInput?.click()">
-                    <el-icon :size="20"><Picture /></el-icon>
-                  </button>
-                  <button
-                    v-if="aiSending"
-                    class="send-btn-inner stop-btn-inner"
-                    type="button"
-                    title="停止生成"
-                    @click="stopAiMessage"
-                  >
-                    <el-icon :size="18"><CloseBold /></el-icon>
-                  </button>
-                  <button
-                    v-else
-                    class="send-btn-inner"
-                    type="button"
-                    :class="{ 'send-btn-inner-active': input.trim() || selectedImageFiles.length }"
-                    :disabled="!input.trim() && !selectedImageFiles.length"
-                    title="发送问题"
-                    @click="sendAiMessage"
-                  >
-                    <el-icon :size="20"><Top /></el-icon>
-                  </button>
-                </div>
+                <button class="im-img-btn-inner-left" type="button" title="上传图片" @click="imageInput?.click()">
+                  <el-icon :size="20"><Picture /></el-icon>
+                </button>
+                <button
+                  v-if="aiSending"
+                  class="send-btn-inner stop-btn-inner"
+                  type="button"
+                  title="停止生成"
+                  @click="stopAiMessage"
+                >
+                  <el-icon :size="18"><CloseBold /></el-icon>
+                </button>
+                <button
+                  v-else
+                  class="send-btn-inner"
+                  type="button"
+                  :class="{ 'send-btn-inner-active': input.trim() || selectedImageFiles.length }"
+                  :disabled="!input.trim() && !selectedImageFiles.length"
+                  title="发送问题"
+                  @click="sendAiMessage"
+                >
+                  <el-icon :size="20"><Top /></el-icon>
+                </button>
               </div>
             </div>
           </div>
@@ -363,21 +361,19 @@
                     multiple
                     @change="onPickImages"
                   />
-                  <div class="input-toolbar">
-                    <button class="im-img-btn-inner-left" type="button" title="上传图片" @click="imageInputRef?.click()">
-                      <el-icon :size="20"><Picture /></el-icon>
-                    </button>
-                    <button
-                      class="send-btn-inner"
-                      type="button"
-                      :class="{ 'send-btn-inner-active': consultationInput.trim() || pendingImages.length }"
-                      :disabled="consultationSending || (!consultationInput.trim() && !pendingImages.length)"
-                      title="发送消息"
-                      @click="sendConsultationMessage"
-                    >
-                      <el-icon :size="20"><Top /></el-icon>
-                    </button>
-                  </div>
+                  <button class="im-img-btn-inner-left" type="button" title="上传图片" @click="imageInputRef?.click()">
+                    <el-icon :size="20"><Picture /></el-icon>
+                  </button>
+                  <button
+                    class="send-btn-inner"
+                    type="button"
+                    :class="{ 'send-btn-inner-active': consultationInput.trim() || pendingImages.length }"
+                    :disabled="consultationSending || (!consultationInput.trim() && !pendingImages.length)"
+                    title="发送消息"
+                    @click="sendConsultationMessage"
+                  >
+                    <el-icon :size="20"><Top /></el-icon>
+                  </button>
                 </div>
               </div>
             </div>
@@ -411,7 +407,6 @@
                 <span class="archive-meta">
                   <time>{{ formatDateShort(c.created_at) }}</time>
                   <span v-if="c.rating !== null && c.rating !== undefined" class="archive-rated">已评 {{ c.rating }}★</span>
-                  <span v-else-if="c.status === '已结束' && !c.rating_skipped_at" class="archive-unrated">待评价</span>
                 </span>
               </span>
               <span v-if="c.unread_count > 0" class="archive-unread-badge">{{ c.unread_count > 99 ? '99+' : c.unread_count }}</span>
@@ -587,11 +582,6 @@ const currentConversationTitle = computed(() => {
   const current = aiConversations.value.find(item => item.id === activeConversationId.value)
   return current?.title || '新对话'
 })
-const archiveUnratedCount = computed(() =>
-  archiveList.value.filter(c => c.status === '已结束'
-    && (c.rating === null || c.rating === undefined)
-    && !c.rating_skipped_at).length
-)
 const totalUnreadForBadge = computed(() => notificationStore.unreadCount)
 
 function enterMode(nextMode: Exclude<AskMode, null>) {
@@ -2187,7 +2177,7 @@ onBeforeUnmount(() => {
 
 .textarea-wrap :deep(.el-textarea__inner) {
   min-height: 64px !important;
-  padding: 10px 14px;
+  padding: 10px 52px 50px 14px;
   border: 1px solid #e0e8e2;
   border-radius: 14px;
   box-shadow: none;
@@ -2195,14 +2185,10 @@ onBeforeUnmount(() => {
   line-height: 1.55;
 }
 
-.input-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 4px 0;
-}
-
 .im-img-btn-inner-left {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2244,6 +2230,9 @@ onBeforeUnmount(() => {
 }
 
 .send-btn-inner {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3314,7 +3303,6 @@ onBeforeUnmount(() => {
 }
 .archive-meta { display: flex; gap: 10px; font-size: 12px; color: #9ca3a0; }
 .archive-rated { color: #ca8a04; font-weight: 700; }
-.archive-unrated { color: #f56c6c; font-weight: 700; }
 .archive-unread-badge {
   position: absolute;
   top: 8px;

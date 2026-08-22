@@ -518,6 +518,19 @@ def get_or_create_consultation(
     if ongoing:
         return _to_consultation(ongoing, current_user.name, db)
 
+    # 无进行中会话时，优先返回最近的"已结束但未评价未跳过"的会话，
+    # 让农户在最后一条对话下方看到评价入口（5星评价框）。
+    # 农户评价或点×跳过后，该会话不再返回，下方走占位会话让农户发起新咨询。
+    unrated_ended = db.query(ExpertQuestion).filter(
+        ExpertQuestion.user_id == current_user.id,
+        ExpertQuestion.expert_id == expert_id,
+        ExpertQuestion.status == "已结束",
+        ExpertQuestion.rating == None,
+        ExpertQuestion.rating_skipped_at == None,
+    ).order_by(ExpertQuestion.updated_at.desc()).first()
+    if unrated_ended:
+        return _to_consultation(unrated_ended, current_user.name, db)
+
     # 返回占位会话：id=0 表示尚未持久化，前端首条消息触发创建
     placeholder = ExpertQuestion(
         id=0, user_id=current_user.id, expert_id=expert_id,
