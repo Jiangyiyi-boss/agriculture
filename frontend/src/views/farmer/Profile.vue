@@ -69,10 +69,6 @@
           </button>
         </el-card>
 
-        <button class="logout-button" type="button" @click="handleLogout">
-          <el-icon :size="23"><SwitchButton /></el-icon>
-          退出登录
-        </button>
       </div>
     </div>
 
@@ -157,7 +153,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { UploadFile } from 'element-plus'
-import { Aim, ArrowRight, Camera, Location, Phone, SwitchButton } from '@element-plus/icons-vue'
+import { Aim, ArrowRight, Camera, Location, Phone } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { api } from '@/api/client'
 
@@ -591,10 +587,6 @@ async function handleSave() {
   }
 }
 
-function handleLogout() {
-  auth.logout()
-  router.push('/login')
-}
 </script>
 
 <style scoped>
@@ -797,26 +789,7 @@ function handleLogout() {
   color: #178844;
 }
 
-.logout-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 54px;
-  border: 1px solid rgba(34, 94, 56, .18);
-  border-radius: 16px;
-  background: #f8fbf7;
-  color: #06150d;
-  font-size: 20px;
-  font-weight: 900;
-  cursor: pointer;
-}
 
-.logout-button:hover {
-  border-color: #178844;
-  color: #178844;
-}
 
 /* 编辑资料弹窗内部元素样式（dialog 外壳样式由全局 farmer-dialog.css 提供） */
 .edit-avatar-row {
@@ -1029,12 +1002,6 @@ function handleLogout() {
 
   .stat-value {
     font-size: 17px;
-  }
-
-  .logout-button {
-    min-height: 64px;
-    padding: 0 20px;
-    font-size: 18px;
   }
 
   .edit-avatar-row {
