@@ -354,7 +354,7 @@
     </div>
 
     <!-- 文章详情弹窗 -->
-    <el-dialog v-model="articleDetailVisible" title="文章详情" width="720px" class="article-detail-dialog">
+    <el-dialog v-model="articleDetailVisible" title="文章详情" width="720px" class="form-dialog">
       <div v-if="articleDetail" class="article-detail-content">
         <h2 class="article-detail-title">{{ articleDetail.title }}</h2>
         <div class="article-detail-meta">
@@ -376,7 +376,7 @@
     </el-dialog>
 
     <!-- 拒绝文章弹窗 -->
-    <el-dialog v-model="rejectDialogVisible" title="拒绝文章" width="520px" class="reject-dialog">
+    <el-dialog v-model="rejectDialogVisible" title="拒绝文章" width="520px" class="form-dialog" :close-on-click-modal="false">
       <div class="reject-dialog-body">
         <p class="reject-dialog-tip">请输入拒绝原因，专家会看到该审核意见</p>
         <el-input
@@ -574,6 +574,7 @@ const statCards = computed(() => [
   { value: stats.value.users || 0, label: '注册农户', hint: '', icon: User, tone: 'green' },
   { value: stats.value.experts || 0, label: '农业专家', hint: '', icon: UserFilled, tone: 'cyan' },
   { value: stats.value.articles || 0, label: '已发布资讯', hint: '', icon: Notebook, tone: 'coral' },
+  { value: stats.value.pending_articles || 0, label: '待审核文章', hint: '', icon: Document, tone: 'amber' },
   { value: stats.value.total_consultations || 0, label: '累计咨询数', hint: '', icon: DataAnalysis, tone: 'teal' },
   { value: stats.value.land_plots || 0, label: '录入地块', hint: '', icon: Location, tone: 'sage' },
 ])
@@ -2101,6 +2102,8 @@ onMounted(async () => {
 /* 文章详情弹窗内部样式（dialog 外壳样式见全局 style 块） */
 .article-detail-content {
   padding: 24px 28px;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .article-detail-title {
@@ -2397,58 +2400,4 @@ onMounted(async () => {
 
 <!-- 全局样式：el-dialog 会被 teleport 到 body，scoped 的 :deep() 无法匹配，需用全局样式 -->
 <style>
-/* 文章详情弹窗外壳 */
-.article-detail-dialog .el-dialog {
-  border-radius: 20px;
-  overflow: hidden;
-  max-width: calc(100vw - 40px);
-}
-
-.article-detail-dialog .el-dialog__header {
-  margin: 0;
-  padding: 20px 24px;
-  border-bottom: 1px solid #ecf3ee;
-  background: #f6fbf7;
-}
-
-.article-detail-dialog .el-dialog__title {
-  font-size: 18px;
-  font-weight: 800;
-  color: #178844;
-}
-
-.article-detail-dialog .el-dialog__body {
-  padding: 0;
-  max-height: 70vh;
-  overflow-y: auto;
-}
-
-/* 拒绝文章弹窗外壳 */
-.reject-dialog .el-dialog {
-  border-radius: 20px;
-  overflow: hidden;
-  max-width: calc(100vw - 40px);
-}
-
-.reject-dialog .el-dialog__header {
-  margin: 0;
-  padding: 20px 24px;
-  border-bottom: 1px solid #fdeaea;
-  background: #fff5f5;
-}
-
-.reject-dialog .el-dialog__title {
-  font-size: 18px;
-  font-weight: 800;
-  color: #c0392b;
-}
-
-.reject-dialog .el-dialog__body {
-  padding: 0;
-}
-
-.reject-dialog .el-dialog__footer {
-  padding: 16px 24px 20px;
-  border-top: 1px solid #f3f3f3;
-}
 </style>

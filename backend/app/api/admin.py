@@ -32,6 +32,7 @@ def get_stats(current_user: User = Depends(get_current_user), db: Session = Depe
         "users": db.query(User).filter(User.role == 1).count(),
         "experts": db.query(User).filter(User.role == 2).count(),
         "articles": db.query(Article).filter(Article.review_status == "published").count(),
+        "pending_articles": db.query(Article).filter(Article.review_status == "pending", Article.author_role == 2).count(),
         "total_consultations": db.query(ExpertQuestion).count(),
         "land_plots": db.query(FarmLand).count(),
     }

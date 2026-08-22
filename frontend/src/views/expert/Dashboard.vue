@@ -286,18 +286,20 @@
                       @keydown.enter.exact.prevent="sendMessage"
                     />
                     <input ref="imageInputRef" type="file" accept="image/*" multiple @change="onPickImages" hidden />
-                    <button class="im-img-btn-inner-left" type="button" title="上传图片" @click="imageInputRef?.click()">
-                      <el-icon :size="20"><Picture /></el-icon>
-                    </button>
-                    <button
-                      class="send-btn-inner" type="button"
-                      :class="{ 'send-btn-inner-active': consultationInput.trim() || pendingImages.length }"
-                      :disabled="sending || (!consultationInput.trim() && !pendingImages.length)"
-                      title="发送回复"
-                      @click="sendMessage"
-                    >
-                      <el-icon :size="20"><Top /></el-icon>
-                    </button>
+                    <div class="input-toolbar">
+                      <button class="im-img-btn-inner-left" type="button" title="上传图片" @click="imageInputRef?.click()">
+                        <el-icon :size="20"><Picture /></el-icon>
+                      </button>
+                      <button
+                        class="send-btn-inner" type="button"
+                        :class="{ 'send-btn-inner-active': consultationInput.trim() || pendingImages.length }"
+                        :disabled="sending || (!consultationInput.trim() && !pendingImages.length)"
+                        title="发送回复"
+                        @click="sendMessage"
+                      >
+                        <el-icon :size="20"><Top /></el-icon>
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div class="chat-input-box chat-readonly" v-else>
@@ -2598,7 +2600,7 @@ onBeforeUnmount(() => {
 
 .textarea-wrap :deep(.el-textarea__inner) {
   min-height: 64px !important;
-  padding: 10px 52px 30px 14px;
+  padding: 10px 14px;
   border: 1px solid #e0e8e2;
   border-radius: 14px;
   box-shadow: none;
@@ -2606,10 +2608,14 @@ onBeforeUnmount(() => {
   line-height: 1.55;
 }
 
+.input-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 4px 0;
+}
+
 .im-img-btn-inner-left {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2628,9 +2634,6 @@ onBeforeUnmount(() => {
 }
 
 .send-btn-inner {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
   display: flex;
   align-items: center;
   justify-content: center;

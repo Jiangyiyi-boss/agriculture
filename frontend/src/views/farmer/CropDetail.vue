@@ -125,7 +125,8 @@
       </div>
     </div>
 
-    <div v-if="!crop" class="empty-text">批次不存在或已删除</div>
+    <div v-if="loading" class="empty-text">加载中...</div>
+    <div v-else-if="!crop" class="empty-text">批次不存在或已删除</div>
 
     <el-dialog v-model="addDialogVisible" :title="dialogTitle" width="600px" class="form-dialog" :close-on-click-modal="false">
 
@@ -139,6 +140,14 @@
           <el-select v-model="addForm.work_type" placeholder="请选择" style="width: 100%">
             <el-option v-for="t in workTypeOptions" :key="t" :label="t" :value="t" />
           </el-select>
+        </el-form-item>
+        <el-form-item v-if="addForm.work_type === '其他'" label="具体类型" prop="custom_type">
+          <el-input
+            v-model="addForm.custom_type"
+            placeholder="如：除草、修剪、中耕"
+            maxlength="20"
+            show-word-limit
+          />
         </el-form-item>
         <el-form-item label="作业日期" prop="work_date">
           <el-date-picker
@@ -231,9 +240,11 @@ const router = useRouter()
 
 const crop = ref<any>(null)
 const works = ref<any[]>([])
+const loading = ref(true)
 
 const workTypes = ['全部', '整地', '播种', '施肥', '打药', '灌溉', '其他']
 const workTypeOptions = workTypes.filter(t => t !== '全部')
+const presetWorkTypes = ['整地', '播种', '施肥', '打药', '灌溉', '采收']
 const filter = ref('全部')
 
 const typeIcons: Record<string, string> = {
@@ -279,13 +290,16 @@ function plantedDays(c: any): number {
 const sortedWorks = computed(() => {
   const list = filter.value === '全部'
     ? [...works.value]
-    : works.value.filter(w => w.work_type === filter.value)
+    : filter.value === '其他'
+      ? works.value.filter(w => !presetWorkTypes.includes(w.work_type))
+      : works.value.filter(w => w.work_type === filter.value)
   return list.sort((a, b) => (a.work_date || '').localeCompare(b.work_date || ''))
 })
 
 async function loadData() {
   const batchId = Number(route.params.id)
   if (!batchId) return
+  loading.value = true
   try {
     // 进入作物详情时，先标记专家建议为已读，再加载详情数据
     // 注意：必须 await 标记完成，否则返回列表时列表接口可能读到的还是未读状态
@@ -310,6 +324,8 @@ async function loadData() {
     }
   } catch {
     ElMessage.error('加载失败')
+  } finally {
+    loading.value = false
   }
 }
 
@@ -325,6 +341,7 @@ const dialogTitle = computed(() => editingWork.value ? '编辑作业' : '记录�
 
 const addForm = reactive({
   work_type: '' as string,
+  custom_type: '' as string,
   work_date: '' as string,
   description: '',
 })
@@ -338,6 +355,7 @@ const addRules = {
 
 function resetAddForm() {
   addForm.work_type = ''
+  addForm.custom_type = ''
   addForm.work_date = new Date().toISOString().slice(0, 10)
   addForm.description = ''
   photoUrls.value = []
@@ -352,7 +370,14 @@ function openAddDialog() {
 
 function openEditDialog(work: any) {
   editingWork.value = work
-  addForm.work_type = work.work_type
+  // 若原作业类型不在预设列表中，视为自定义类型，下拉显示"其他"并预填自定义值
+  if (presetWorkTypes.includes(work.work_type) || work.work_type === '其他') {
+    addForm.work_type = work.work_type
+    addForm.custom_type = ''
+  } else {
+    addForm.work_type = '其他'
+    addForm.custom_type = work.work_type
+  }
   addForm.work_date = work.work_date
   addForm.description = work.description || ''
   photoUrls.value = work.photos ? work.photos.split(',').filter((u: string) => u.trim()) : []
@@ -394,11 +419,15 @@ async function submitAdd() {
   } catch {
     return
   }
+  // 选了"其他"且填写了自定义类型时，用自定义值作为最终作业类型
+  const finalWorkType = addForm.work_type === '其他' && addForm.custom_type.trim()
+    ? addForm.custom_type.trim()
+    : addForm.work_type
   addSubmitting.value = true
   try {
     if (editingWork.value) {
       await api.updateFarmWork(editingWork.value.id, {
-        work_type: addForm.work_type,
+        work_type: finalWorkType,
         work_date: addForm.work_date,
         description: addForm.description.trim(),
         photos: photoUrls.value.length ? photoUrls.value.join(',') : null,
@@ -406,7 +435,7 @@ async function submitAdd() {
       ElMessage.success('作业已更新')
     } else {
       await api.createFarmWork({
-        work_type: addForm.work_type,
+        work_type: finalWorkType,
         work_date: addForm.work_date,
         land_id: crop.value.land_id,
         batch_id: crop.value.id,

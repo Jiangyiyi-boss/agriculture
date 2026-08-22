@@ -197,29 +197,31 @@
                   multiple
                   @change="handleImageChange"
                 />
-                <button class="im-img-btn-inner-left" type="button" title="上传图片" @click="imageInput?.click()">
-                  <el-icon :size="20"><Picture /></el-icon>
-                </button>
-                <button
-                  v-if="aiSending"
-                  class="send-btn-inner stop-btn-inner"
-                  type="button"
-                  title="停止生成"
-                  @click="stopAiMessage"
-                >
-                  <el-icon :size="18"><CloseBold /></el-icon>
-                </button>
-                <button
-                  v-else
-                  class="send-btn-inner"
-                  type="button"
-                  :class="{ 'send-btn-inner-active': input.trim() || selectedImageFiles.length }"
-                  :disabled="!input.trim() && !selectedImageFiles.length"
-                  title="发送问题"
-                  @click="sendAiMessage"
-                >
-                  <el-icon :size="20"><Top /></el-icon>
-                </button>
+                <div class="input-toolbar">
+                  <button class="im-img-btn-inner-left" type="button" title="上传图片" @click="imageInput?.click()">
+                    <el-icon :size="20"><Picture /></el-icon>
+                  </button>
+                  <button
+                    v-if="aiSending"
+                    class="send-btn-inner stop-btn-inner"
+                    type="button"
+                    title="停止生成"
+                    @click="stopAiMessage"
+                  >
+                    <el-icon :size="18"><CloseBold /></el-icon>
+                  </button>
+                  <button
+                    v-else
+                    class="send-btn-inner"
+                    type="button"
+                    :class="{ 'send-btn-inner-active': input.trim() || selectedImageFiles.length }"
+                    :disabled="!input.trim() && !selectedImageFiles.length"
+                    title="发送问题"
+                    @click="sendAiMessage"
+                  >
+                    <el-icon :size="20"><Top /></el-icon>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -361,19 +363,21 @@
                     multiple
                     @change="onPickImages"
                   />
-                  <button class="im-img-btn-inner-left" type="button" title="上传图片" @click="imageInputRef?.click()">
-                    <el-icon :size="20"><Picture /></el-icon>
-                  </button>
-                  <button
-                    class="send-btn-inner"
-                    type="button"
-                    :class="{ 'send-btn-inner-active': consultationInput.trim() || pendingImages.length }"
-                    :disabled="consultationSending || (!consultationInput.trim() && !pendingImages.length)"
-                    title="发送消息"
-                    @click="sendConsultationMessage"
-                  >
-                    <el-icon :size="20"><Top /></el-icon>
-                  </button>
+                  <div class="input-toolbar">
+                    <button class="im-img-btn-inner-left" type="button" title="上传图片" @click="imageInputRef?.click()">
+                      <el-icon :size="20"><Picture /></el-icon>
+                    </button>
+                    <button
+                      class="send-btn-inner"
+                      type="button"
+                      :class="{ 'send-btn-inner-active': consultationInput.trim() || pendingImages.length }"
+                      :disabled="consultationSending || (!consultationInput.trim() && !pendingImages.length)"
+                      title="发送消息"
+                      @click="sendConsultationMessage"
+                    >
+                      <el-icon :size="20"><Top /></el-icon>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2183,7 +2187,7 @@ onBeforeUnmount(() => {
 
 .textarea-wrap :deep(.el-textarea__inner) {
   min-height: 64px !important;
-  padding: 10px 52px 30px 14px;
+  padding: 10px 14px;
   border: 1px solid #e0e8e2;
   border-radius: 14px;
   box-shadow: none;
@@ -2191,10 +2195,14 @@ onBeforeUnmount(() => {
   line-height: 1.55;
 }
 
+.input-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 4px 0;
+}
+
 .im-img-btn-inner-left {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2236,9 +2244,6 @@ onBeforeUnmount(() => {
 }
 
 .send-btn-inner {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
