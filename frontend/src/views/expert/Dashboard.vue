@@ -2598,7 +2598,7 @@ onBeforeUnmount(() => {
 
 .textarea-wrap :deep(.el-textarea__inner) {
   min-height: 64px !important;
-  padding: 10px 52px 50px 14px !important;
+  padding: 10px 52px 50px 44px !important;
   border: 1px solid #e0e8e2;
   border-radius: 14px;
   box-shadow: none;
