@@ -375,8 +375,17 @@
       </div>
     </el-dialog>
 
+    <!-- 审核通过确认弹窗 -->
+    <el-dialog v-model="approveDialogVisible" title="审核通过" width="460px" class="form-dialog confirm-dialog" :close-on-click-modal="false">
+      <div class="confirm-dialog__body">确认通过《{{ approvingArticle?.title }}》并发布吗？</div>
+      <template #footer>
+        <el-button @click="approveDialogVisible = false">取消</el-button>
+        <el-button type="success" :loading="approveSaving" @click="confirmApprove">通过并发布</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 拒绝文章弹窗 -->
-    <el-dialog v-model="rejectDialogVisible" title="拒绝文章" width="520px" class="form-dialog" :close-on-click-modal="false">
+    <el-dialog v-model="rejectDialogVisible" title="拒绝文章" width="520px" class="form-dialog confirm-dialog danger" :close-on-click-modal="false">
       <div class="reject-dialog-body">
         <p class="reject-dialog-tip">请输入拒绝原因，专家会看到该审核意见</p>
         <el-input
@@ -493,6 +502,9 @@ const rejectDialogVisible = ref(false)
 const rejectReason = ref('')
 const rejectingArticle = ref<any>(null)
 const rejectSaving = ref(false)
+const approveDialogVisible = ref(false)
+const approvingArticle = ref<any>(null)
+const approveSaving = ref(false)
 const deleteDialogVisible = ref(false)
 const deletingArticle = ref<any>(null)
 const deleteSaving = ref(false)
@@ -859,17 +871,24 @@ async function reviewArticle(article: any, action: 'approve' | 'reject') {
     rejectDialogVisible.value = true
     return
   }
+  // 通过走自定义圆角弹窗
+  approvingArticle.value = article
+  approveSaving.value = false
+  approveDialogVisible.value = true
+}
+
+async function confirmApprove() {
+  if (!approvingArticle.value) return
+  approveSaving.value = true
   try {
-    await ElMessageBox.confirm(`确认通过《${article.title}》并发布吗？`, '审核通过', {
-      type: 'success',
-      confirmButtonText: '通过并发布',
-      cancelButtonText: '取消',
-    })
-    await api.reviewArticle(article.id, action, '')
+    await api.reviewArticle(approvingArticle.value.id, 'approve', '')
     ElMessage.success('文章已发布')
+    approveDialogVisible.value = false
     await Promise.all([fetchArticles(), fetchStats()])
   } catch {
-    // 取消审核时保持当前列表。
+    ElMessage.error('操作失败，请重试')
+  } finally {
+    approveSaving.value = false
   }
 }
 
