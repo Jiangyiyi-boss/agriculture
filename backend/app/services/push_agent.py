@@ -105,8 +105,8 @@ def create_solar_term_notifications(db, logger=None) -> int:
     now = now_china()
     dedup_code = f"solar_term:{term['name']}:{now.year}"
 
-    # 查所有活跃农户
-    users = db.query(User).filter(User.status == 1).all()
+    # 查所有活跃农户（仅 role=1 农户，不推给管理员/专家）
+    users = db.query(User).filter(User.role == 1, User.status == 1).all()
 
     created = 0
     for user in users:
@@ -192,9 +192,10 @@ def create_weather_push_notifications(db, logger=None) -> int:
             logger.warning("[推送Agent] 和风 API 未配置，跳过天气推送")
         return 0
 
+    # 仅 role=1 农户（不推给管理员/专家），且有 adcode 才能查天气
     users: list[User] = (
         db.query(User)
-        .filter(User.adcode.isnot(None), User.adcode != "", User.status == 1)
+        .filter(User.role == 1, User.adcode.isnot(None), User.adcode != "", User.status == 1)
         .all()
     )
 

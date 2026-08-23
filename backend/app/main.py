@@ -220,7 +220,10 @@ def _scheduler_loop():
         _logger.error(f"[推送调度] 节气补跑异常: {e}", exc_info=True)
 
     # 上次执行节气/轮询的日期+小时标记，避免同一时间段重复执行
-    last_solar_date = now_china().strftime("%Y-%m-%d")
+    # 注意：last_solar_date 初始化为 None，不能预设为今天，否则 6:00 主循环会
+    # 因 last_solar_date == today_str 误判"今天已推过"而跳过（即便实际没推过）。
+    # 当年去重由 create_solar_term_notifications 通过 MySQL rule_code 兜底。
+    last_solar_date = None
     last_poll_slot = None  # "YYYY-MM-DD HH:MM" 格式（按 30 分钟取整）
 
     while not _scheduler_stop.is_set():
