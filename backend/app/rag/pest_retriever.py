@@ -38,16 +38,20 @@ class PestKnowledgeMatch:
 
 
 def compose_pest_vector_text(knowledge: PestKnowledge) -> str:
+    """向量化文本：只保留检索相关字段，聚焦症状与病名。
+
+    - 召回用：crop/pest_name/intro/symptoms/morphology
+    - 排除 cause/habit/control_method：
+      * cause/habit 是病原学与生活习性，不是症状描述，稀释症状信号
+      * control_method 是答案不是检索词，且部分含"参见XX病"字样会污染向量
+    - 命中后 format_matches_for_prompt 从 MySQL 取完整字段给 LLM，不丢信息
+    """
     return "\n".join([
         f"作物：{knowledge.crop_name}",
-        f"类型：{knowledge.category}",
         f"病虫害名称：{knowledge.pest_name}",
         f"简介：{knowledge.intro or ''}",
         f"危害症状：{knowledge.symptoms or ''}",
-        f"发生因素：{knowledge.cause or ''}",
-        f"生活习性：{knowledge.habit or ''}",
         f"形态特征：{knowledge.morphology or ''}",
-        f"防治方法：{knowledge.control_method or ''}",
     ]).strip()
 
 
