@@ -314,6 +314,11 @@ async def run_agent_stream(
 
     except Exception as exc:
         logger.exception("Agent 运行异常")
+        # 回滚 db session，防止连接池中的失效连接导致后续请求全部失败
+        try:
+            db.rollback()
+        except Exception:
+            pass
         yield {"event": "error", "data": {"detail": str(exc)}}
         return
 
