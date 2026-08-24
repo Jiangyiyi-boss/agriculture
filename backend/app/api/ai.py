@@ -13,13 +13,12 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.agents.graph.graph import run_agent_stream
-from app.agents.long_term_memory import extract_and_update_memories
-from app.agents.memory import memory
+from app.agents.graph import graph as graph_module
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.timezone import now_china
-from app.models import AIConversation, AIMessage, AiMemory, User
+from app.models import AIConversation, AIMessage, User
 from app.schemas import AIConversationResponse, AIMessageResponse
 
 router = APIRouter(prefix="/api/ai", tags=["AI 知识问答"])
@@ -119,7 +118,7 @@ def list_messages(conversation_id: int, current_user: User = Depends(get_current
 
 
 @router.delete("/conversations/{conversation_id}")
-def delete_conversation(conversation_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def delete_conversation(conversation_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     conversation = db.query(AIConversation).filter(
         AIConversation.id == conversation_id,
         AIConversation.user_id == current_user.id,
@@ -127,14 +126,14 @@ def delete_conversation(conversation_id: int, current_user: User = Depends(get_c
     if not conversation:
         raise HTTPException(status_code=404, detail="对话不存在")
 
-    db.query(AiMemory).filter(AiMemory.conversation_id == conversation_id).update(
-        {AiMemory.conversation_id: None},
-        synchronize_session=False,
-    )
     db.query(AIMessage).filter(AIMessage.conversation_id == conversation_id).delete()
     db.delete(conversation)
     db.commit()
-    memory.delete_messages(current_user.id, conversation_id)
+
+    # 清理 pg 中该会话的 checkpoint（thread_id 按 user_id:conversation_id 隔离）
+    if graph_module._pg_saver is not None:
+        await graph_module._pg_saver.delete_thread(f"{current_user.id}:{conversation_id}")
+
     return {"detail": "对话已删除"}
 
 
@@ -219,26 +218,14 @@ async def chat_stream(
             db.commit()
             db.refresh(assistant_message)
 
-            recent = memory.get_messages(current_user.id, conversation.id)
-            recent.extend([
-                {"role": "user", "content": user_message.content},
-                {"role": "assistant", "content": assistant_message.content},
-            ])
-            memory.save_messages(current_user.id, conversation.id, recent)
+            # 短期/长期记忆由 LangGraph checkpointer + langmem 工具自动管理，
+            # 无需手动存取
 
             yield _sse("done", {
                 "message_id": assistant_message.id,
                 "agent_type": AGENT_TYPE,
                 "sources": sources,
             })
-
-            await extract_and_update_memories(
-                db,
-                user_id=current_user.id,
-                conversation_id=conversation.id,
-                question=user_message.content,
-                answer=assistant_message.content,
-            )
         except Exception as error:
             db.rollback()
             detail = str(error) or "AI 问答暂时不可用"

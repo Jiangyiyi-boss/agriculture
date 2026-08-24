@@ -16,10 +16,12 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.prebuilt import create_react_agent
+from langgraph.store.postgres.aio import AsyncPostgresStore
+from langmem import create_manage_memory_tool, create_search_memory_tool
 
 from app.agents.graph.tools import ALL_TOOLS
-from app.agents.memory import memory
 from app.core.config import settings
 
 logger = logging.getLogger("graph")
@@ -65,7 +67,9 @@ SYSTEM_PROMPT = """你是慧农宝的 AI 智能助手，面向农户提供农业
   直接给诊断结论即可；但若使用了 web_search 联网搜索，末尾须标注"（以上内容来自联网搜索）"
 
 ## 多轮对话
-- 短期记忆已包含历史对话，请主动关联上下文，避免重复已完成的诊断
+- 历史对话由系统自动注入，请主动关联上下文，避免重复已完成的诊断
+- 识别到用户的稳定事实（地区、种植作物、面积、偏好等）时，主动调用 manage_memory 工具记录
+- 被问到用户历史信息时，主动调用 search_memory 工具检索
 
 ## 病虫害诊断硬约束
 1. 严格依据 rag_search 返回的知识库原文，禁止脑补或改写特征描述
@@ -103,13 +107,62 @@ _llm = ChatOpenAI(
 
 
 # ---------------------------------------------------------------------------
-# Graph building
+# Graph building — 懒初始化（首次调用时建 pg 表）
 # ---------------------------------------------------------------------------
 
-_agent = create_react_agent(
-    model=_llm,
-    tools=ALL_TOOLS,
-)
+_pg_saver: AsyncPostgresSaver | None = None
+_pg_store: AsyncPostgresStore | None = None
+
+
+def _bge_m3_embed(texts: list[str]) -> list[list[float]]:
+    """用 BGE-M3 模型做 embedding（同步，由 store 在线程池中调用）"""
+    from app.rag.embedding_service import embedding_service
+    return embedding_service.embed_texts(texts)
+
+
+async def _init_pg_backends() -> None:
+    """懒初始化 pg checkpointer + store（首次调用时建表）"""
+    global _pg_saver, _pg_store
+    if _pg_saver is not None and _pg_store is not None:
+        return
+    # 用连接池长期持有，避免 async with 退出后连接关闭
+    from psycopg.rows import dict_row
+    from psycopg_pool import AsyncConnectionPool
+
+    pool = AsyncConnectionPool(
+        conninfo=settings.PG_URL,
+        max_size=20,
+        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+        open=False,
+    )
+    await pool.open()
+
+    _pg_saver = AsyncPostgresSaver(conn=pool)
+    await _pg_saver.setup()  # 自动建 checkpoint 表
+
+    _pg_store = AsyncPostgresStore(
+        conn=pool,
+        index={
+            "dims": settings.EMBEDDING_DIM,  # 1024，复用 BGE-M3 维度
+            "embed": _bge_m3_embed,
+        },
+    )
+    await _pg_store.setup()  # 自动建 store 表
+
+
+async def _get_agent():
+    """懒加载 agent：首次调用初始化 pg 后端 + 注册 langmem 工具"""
+    await _init_pg_backends()
+    return create_react_agent(
+        model=_llm,
+        tools=[
+            *ALL_TOOLS,
+            create_manage_memory_tool(namespace=("memories",)),
+            create_search_memory_tool(namespace=("memories",)),
+        ],
+        checkpointer=_pg_saver,
+        store=_pg_store,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -182,20 +235,6 @@ async def run_agent_stream(
 
     Yields dicts with keys: event, data
     """
-    from app.agents.long_term_memory import format_memory_prompt
-
-    short_memory = memory.get_messages(user.id, conversation_id)
-    memory_prompt = format_memory_prompt(db, user.id)
-
-    # Build system + memory message
-    system_text = SYSTEM_PROMPT
-    if memory_prompt:
-        system_text += memory_prompt
-
-    initial_messages = [{"role": "system", "content": system_text}]
-    initial_messages.extend(short_memory[-20:])
-
-    # Build user message
     # 注入当前日期+季节+当地天气，让 LLM 结合时令给农事建议
     from app.core.timezone import now_china
     now = now_china()
@@ -215,7 +254,11 @@ async def run_agent_stream(
     else:
         user_text = f"{question}{context_info}"
 
-    initial_messages.append({"role": "user", "content": user_text})
+    # 历史对话由 checkpointer 按 thread_id 自动恢复，不再手动拼装
+    initial_messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_text},
+    ]
 
     answer_parts: list[str] = []
     tool_call_count = 0
@@ -228,6 +271,10 @@ async def run_agent_stream(
             "conversation_id": conversation_id,
             "images": images,
             "sources_collector": sources_collector,
+            # checkpointer 按 thread_id 恢复对话状态
+            "thread_id": f"{user.id}:{conversation_id}",
+            # langmem 工具按 langgraph_user_id 隔离用户记忆命名空间
+            "langgraph_user_id": str(user.id),
         },
         # 防止 LLM 死循环调工具：最多 15 步（agent ⇄ tools 循环）
         # 农业问答场景 3-5 次工具调用足够，15 次留安全余量
@@ -235,7 +282,8 @@ async def run_agent_stream(
     }
 
     try:
-        async for event in _agent.astream_events(
+        agent = await _get_agent()
+        async for event in agent.astream_events(
             {"messages": initial_messages},
             config=config,
             version="v2",
@@ -250,6 +298,8 @@ async def run_agent_stream(
                     "web_search": "正在联网搜索相关资料...",
                     "analyze_image": "正在分析上传的图片...",
                     "rule_engine": "正在分析土壤和作物适配条件...",
+                    "manage_memory": "正在记录您的偏好信息...",
+                    "search_memory": "正在检索您的历史信息...",
                 }
                 status = tool_labels.get(tool_name, f"正在调用 {tool_name}...")
                 yield {"event": "status", "data": {"message": status}}

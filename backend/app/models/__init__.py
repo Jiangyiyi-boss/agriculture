@@ -262,19 +262,6 @@ class AIMessage(Base):
     conversation = relationship("AIConversation", back_populates="messages")
 
 
-class AiMemory(Base):
-    """AI 长期记忆：一条条独立事实条目，支持溯源与单条管理"""
-
-    __tablename__ = "ai_memories"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    content = Column(String(500), nullable=False, comment="单条记忆事实")
-    conversation_id = Column(Integer, ForeignKey("ai_conversations.id"), nullable=True, comment="来源会话（溯源）")
-    created_at = Column(DateTime, default=now_china)
-    updated_at = Column(DateTime, default=now_china, onupdate=now_china)
-
-
 class PestKnowledge(Base):
     __tablename__ = "pest_knowledge"
 

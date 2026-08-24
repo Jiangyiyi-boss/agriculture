@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     # Redis（开发环境可选，部分功能不可用）
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # PostgreSQL（LangGraph checkpointer + langmem store）
+    PG_URL: str = "postgresql://agr:agr_pwd@localhost:5432/agr_memory"
+
     # JWT
     SECRET_KEY: str = "hui-nong-bao-secret-key-change-in-production-2026"
     ALGORITHM: str = "HS256"
@@ -54,8 +57,6 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: str = ""
     AI_IMAGE_MAX_MB: int = 5
     AI_IMAGE_MAX_COUNT: int = 5
-    AI_REDIS_TTL_SECONDS: int = 86400
-    AI_REDIS_MAX_ROUNDS: int = 10
 
     # 病虫害 RAG
     BGE_M3_DEVICE: str = "cpu"

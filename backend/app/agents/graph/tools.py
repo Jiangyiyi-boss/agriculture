@@ -16,7 +16,6 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
 from app.agents.llm_clients import analyze_image_with_qwen, tavily_search
-from app.agents.long_term_memory import format_memory_prompt
 from app.models import CropManagement
 from app.rag.pest_retriever import (
     format_matches_for_prompt,

@@ -1,11 +1,17 @@
 """慧农宝 - FastAPI 主入口"""
 
+import asyncio
 import logging
 import os
+import sys
 import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
+
+# Windows 下 psycopg 异步需要 SelectorEventLoop，必须在任何 async 代码前设置
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,7 +22,9 @@ from app.core.config import settings
 from app.core.database import engine, Base, SessionLocal
 
 # 配置日志：病虫害 RAG 调试日志同时输出到控制台和文件
-_file_handler = logging.FileHandler("/app/pest_debug.log", encoding="utf-8")
+# 兼容 Docker（/app/）和本地（当前目录）两种环境
+_log_path = "/app/pest_debug.log" if os.path.isdir("/app") else "pest_debug.log"
+_file_handler = logging.FileHandler(_log_path, encoding="utf-8")
 _file_handler.setLevel(logging.INFO)
 _stream_handler = logging.StreamHandler()
 _stream_handler.setLevel(logging.INFO)
