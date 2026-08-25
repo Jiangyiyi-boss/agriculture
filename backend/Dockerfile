@@ -19,17 +19,18 @@ WORKDIR /app
 # 先拷依赖文件，利用 Docker 缓存
 COPY pyproject.toml uv.lock ./
 
-# 创建 venv
-RUN uv venv .venv
+# 创建 venv（--seed 安装 pip，用于装 torch）
+RUN uv venv --seed .venv
 
 # 导出依赖列表，移除 torch 行（单独装 CPU 版，避免下载2GB+ CUDA/nvidia包）
 RUN uv export --no-hashes --no-dev -o requirements.txt && \
     sed -i '/^torch/d' requirements.txt
 
 # 先单独装 CPU-only PyTorch（~200MB，无 CUDA/nvidia 依赖）
-# 用清华 pytorch-wheels CPU 镜像（不要用 PyPI 镜像，那会拉完整 CUDA 版几个 GB）
+# 用 pip + 清华 pytorch-wheels CPU 镜像（uv 不认这个 URL，pip 可以）
 RUN VIRTUAL_ENV=/app/.venv \
-    uv pip install --no-cache-dir torch --index-url https://mirrors.tuna.tsinghua.edu.cn/pytorch-wheels/cpu
+    /app/.venv/bin/pip install --no-cache-dir --timeout 600 --retries 5 torch \
+    --index-url https://mirrors.tuna.tsinghua.edu.cn/pytorch-wheels/cpu/
 
 # 装其他依赖（阿里云源加速，torch 已满足会跳过）
 RUN UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
