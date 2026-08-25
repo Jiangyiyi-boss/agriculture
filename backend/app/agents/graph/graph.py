@@ -165,6 +165,68 @@ async def _get_agent():
     )
 
 
+async def _sanitize_chat_history(agent, config: RunnableConfig) -> None:
+    """清理 checkpoint 里孤立的 AIMessage(tool_calls)。
+
+    场景：上轮对话 LLM 已生成 tool_calls，但工具执行前/中异常退出
+    （SQLAlchemy 事务失效、SSE 断流、服务器重启等），
+    checkpoint 留下带 tool_calls 的 AIMessage 但无对应 ToolMessage。
+    下轮 LangGraph 加载历史时校验失败，抛 INVALID_CHAT_HISTORY。
+
+    策略：删除末尾孤立的 AIMessage(tool_calls)，保留前面的历史，
+    让 LLM 基于完整上下文重新决策是否调用工具。
+    官方文档：https://docs.langchain.com/oss/python/langgraph/errors/INVALID_CHAT_HISTORY
+    """
+    from langchain_core.messages import RemoveMessage
+
+    try:
+        state = await agent.aget_state(config)
+    except Exception:
+        return
+
+    values = state.values or {}
+    messages: list = values.get("messages", [])
+    if not messages:
+        return
+
+    # 收集所有已被 ToolMessage 回答的 tool_call_id
+    answered_ids: set[str] = set()
+    for msg in messages:
+        if getattr(msg, "type", "") == "tool":
+            tc_id = getattr(msg, "tool_call_id", "") or ""
+            if tc_id:
+                answered_ids.add(tc_id)
+
+    # 从末尾找最后一个 AIMessage，检查它的 tool_calls 是否都被回答
+    for idx in range(len(messages) - 1, -1, -1):
+        msg = messages[idx]
+        if getattr(msg, "type", "") != "ai":
+            continue
+        tool_calls = getattr(msg, "tool_calls", None) or []
+        if not tool_calls:
+            break  # 最后一个 AIMessage 没有 tool_calls，历史是干净的
+        orphan_ids = [
+            tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", "")
+            for tc in tool_calls
+        ]
+        orphan_ids = [tid for tid in orphan_ids if tid and tid not in answered_ids]
+        if not orphan_ids:
+            break  # 所有 tool_calls 都被回答了
+        # 有孤立的 tool_calls → 删掉这个 AIMessage
+        msg_id = getattr(msg, "id", None)
+        if not msg_id:
+            break
+        await agent.aupdate_state(
+            config,
+            {"messages": [RemoveMessage(id=msg_id)]},
+        )
+        logger.warning(
+            "清理了孤立的 AIMessage(tool_calls)，未回答 ids: %s",
+            orphan_ids,
+        )
+        return
+
+
 # ---------------------------------------------------------------------------
 # Streaming entry point
 # ---------------------------------------------------------------------------
@@ -283,6 +345,8 @@ async def run_agent_stream(
 
     try:
         agent = await _get_agent()
+        # 清理上轮可能残留的孤立 AIMessage(tool_calls)，避免 INVALID_CHAT_HISTORY
+        await _sanitize_chat_history(agent, config)
         async for event in agent.astream_events(
             {"messages": initial_messages},
             config=config,
