@@ -26,11 +26,12 @@ RUN uv venv --seed .venv
 RUN uv export --no-hashes --no-dev -o requirements.txt && \
     sed -i '/^torch/d' requirements.txt
 
-# 先单独装 CPU-only PyTorch（~200MB，无 CUDA/nvidia 依赖）
-# 用 pip + 清华 pytorch-wheels CPU 镜像（uv 不认这个 URL，pip 可以）
+# 先单独装 PyTorch（--no-deps 跳过 nvidia/CUDA 依赖，只下 torch 本体 ~900MB）
+# PyPI 上的 torch 是完整版，但 --no-deps 不拉 nvidia-*/triton 等几个 GB 的包
+# torch 的非 CUDA 依赖（filelock/sympy 等）在后续 requirements.txt 步骤补上
 RUN VIRTUAL_ENV=/app/.venv \
-    /app/.venv/bin/pip install --no-cache-dir --timeout 600 --retries 5 torch \
-    --index-url https://mirrors.tuna.tsinghua.edu.cn/pytorch-wheels/cpu/
+    /app/.venv/bin/pip install --no-cache-dir --timeout 600 --no-deps torch \
+    --index-url https://mirrors.aliyun.com/pypi/simple/
 
 # 装其他依赖（阿里云源加速，torch 已满足会跳过）
 RUN UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
