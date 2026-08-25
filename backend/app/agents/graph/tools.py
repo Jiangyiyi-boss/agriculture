@@ -36,6 +36,14 @@ def _get_thread_id(config: RunnableConfig) -> str | None:
     return configurable.get("thread_id")
 
 
+def _safe_rollback(db) -> None:
+    """工具异常时回滚 db session，防止连接池中失效连接导致后续请求全部失败。"""
+    try:
+        db.rollback()
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # VL 疑似病名缓存：analyze_image 提取 → rag_search 组合查询
 # 纯症状查询对"症状横跨多器官"的病害召回乏力（如胡麻斑病排11名开外），
@@ -306,9 +314,11 @@ async def rag_search(query: str, config: RunnableConfig) -> str:
         return format_matches_for_prompt(matches)
     except RETRYABLE_ERRORS as exc:
         logger.warning("rag_search 重试3次后仍失败: %s", exc)
+        _safe_rollback(db)
         return "病虫害知识库暂时不可用（网络故障），建议改用 web_search 搜索相关资料。"
     except Exception as exc:
         logger.warning("rag_search 失败: %s", exc)
+        _safe_rollback(db)
         return f"病虫害知识库检索异常：{exc}"
 
 
@@ -374,9 +384,13 @@ async def web_search(query: str, config: RunnableConfig) -> str:
         return format_sources_for_prompt(sources)
     except RETRYABLE_ERRORS as exc:
         logger.warning("web_search 重试3次后仍失败: %s", exc)
+        if db:
+            _safe_rollback(db)
         return "联网搜索暂时不可用（网络故障），请稍后重试。"
     except Exception as exc:
         logger.warning("web_search 失败: %s", exc)
+        if db:
+            _safe_rollback(db)
         return f"联网搜索失败：{exc}"
 
 
@@ -445,7 +459,16 @@ async def rule_engine(query: str, config: RunnableConfig) -> str:
         )
     except RETRYABLE_ERRORS:
         # 重试失败时降级到直接调用（当前线程）
-        result = run_rule_engine(db, user, query)
+        try:
+            result = run_rule_engine(db, user, query)
+        except Exception as exc:
+            logger.warning("rule_engine 降级调用也失败: %s", exc)
+            _safe_rollback(db)
+            return f"种植规则引擎异常：{exc}"
+    except Exception as exc:
+        logger.warning("rule_engine 失败: %s", exc)
+        _safe_rollback(db)
+        return f"种植规则引擎异常：{exc}"
 
     if not result:
         return "规则引擎未返回结果。"
