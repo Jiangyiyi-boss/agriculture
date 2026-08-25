@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     BGE_M3_DEVICE: str = "cpu"
     BGE_M3_MODEL_PATH: str = ""
     EMBEDDING_DIM: int = 1024
-    BGE_M3_BATCH_SIZE: int = 64
+    BGE_M3_BATCH_SIZE: int = 16
     BGE_M3_MAX_LENGTH: int = 1536
     MILVUS_HOST: str = "127.0.0.1"
     MILVUS_PORT: str = "19530"
