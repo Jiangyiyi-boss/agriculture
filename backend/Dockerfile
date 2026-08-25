@@ -26,12 +26,14 @@ RUN uv venv --seed .venv
 RUN uv export --no-hashes --no-dev -o requirements.txt && \
     sed -i '/^torch/d;/^nvidia/d;/^triton/d' requirements.txt
 
-# 先单独装 PyTorch（--no-deps 跳过 nvidia/CUDA 依赖，只下 torch 本体 ~900MB）
-# PyPI 上的 torch 是完整版，但 --no-deps 不拉 nvidia-*/triton 等几个 GB 的包
-# torch 的非 CUDA 依赖（filelock/sympy 等）在后续 requirements.txt 步骤补上
+# 先单独装 PyTorch（--no-deps 跳过 nvidia/CUDA 依赖）
+# 装完立刻删 torch wheel 自带的 nvidia CUDA 库文件（~2GB，CPU 环境用不上）
+# 必须在同一 RUN 层内删，否则 Docker 层缓存会保留这些文件
 RUN VIRTUAL_ENV=/app/.venv \
     /app/.venv/bin/pip install --no-cache-dir --timeout 600 --no-deps torch \
-    --index-url https://mirrors.aliyun.com/pypi/simple/
+    --index-url https://mirrors.aliyun.com/pypi/simple/ && \
+    rm -rf /app/.venv/lib/python3.11/site-packages/nvidia && \
+    rm -rf /tmp/pip-tmp/* 2>/dev/null; true
 
 # 装其他依赖（阿里云源加速，torch 已满足会跳过）
 RUN UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
