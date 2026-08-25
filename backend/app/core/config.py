@@ -62,12 +62,12 @@ class Settings(BaseSettings):
     BGE_M3_DEVICE: str = "cpu"
     BGE_M3_MODEL_PATH: str = ""
     EMBEDDING_DIM: int = 1024
-    BGE_M3_BATCH_SIZE: int = 16
-    BGE_M3_MAX_LENGTH: int = 512
+    BGE_M3_BATCH_SIZE: int = 64
+    BGE_M3_MAX_LENGTH: int = 1536
     MILVUS_HOST: str = "127.0.0.1"
     MILVUS_PORT: str = "19530"
     MILVUS_COLLECTION_PEST: str = "pest_knowledge"
-    PEST_RAG_SCORE_THRESHOLD: float = 0.55
+    PEST_RAG_SCORE_THRESHOLD: float = 0.50
     PEST_RAG_TOP_K: int = 5
 
     # 服务
