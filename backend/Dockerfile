@@ -22,9 +22,9 @@ COPY pyproject.toml uv.lock ./
 # 创建 venv（--seed 安装 pip，用于装 torch）
 RUN uv venv --seed .venv
 
-# 导出依赖列表，移除 torch 行（单独装 CPU 版，避免下载2GB+ CUDA/nvidia包）
+# 导出依赖列表，移除 torch/nvidia/triton 行（单独装 torch --no-deps，避免 CUDA 包占满磁盘）
 RUN uv export --no-hashes --no-dev -o requirements.txt && \
-    sed -i '/^torch/d' requirements.txt
+    sed -i '/^torch/d;/^nvidia/d;/^triton/d' requirements.txt
 
 # 先单独装 PyTorch（--no-deps 跳过 nvidia/CUDA 依赖，只下 torch 本体 ~900MB）
 # PyPI 上的 torch 是完整版，但 --no-deps 不拉 nvidia-*/triton 等几个 GB 的包
