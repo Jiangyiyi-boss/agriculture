@@ -31,6 +31,55 @@ def _get_configurable(config: RunnableConfig, key: str, default: Any = None) -> 
     return config.get("configurable", {}).get(key, default)
 
 
+def _get_thread_id(config: RunnableConfig) -> str | None:
+    configurable = config.get("configurable", {}) or {}
+    return configurable.get("thread_id")
+
+
+# ---------------------------------------------------------------------------
+# VL 疑似病名缓存：analyze_image 提取 → rag_search 组合查询
+# 纯症状查询对"症状横跨多器官"的病害召回乏力（如胡麻斑病排11名开外），
+# "疑似病名+症状"组合查询可将其拉回 Top1（实测 0.80 vs 第二名 0.77）。
+# ---------------------------------------------------------------------------
+
+_SUSPECTED_NAME_CACHE: dict[str, list[str]] = {}
+
+_NAME_LINE_RE = re.compile(r"疑似病虫害名称[：:]\s*(.+)")
+_NAME_SPLIT_RE = re.compile(r"[、，,;；/]")
+
+
+def _extract_suspected_names(vl_result: str) -> list[str]:
+    """从 VL 输出中解析疑似病虫害名称（VL prompt 约定第1条输出疑似名）。"""
+    names: list[str] = []
+    for line in vl_result.splitlines():
+        match = _NAME_LINE_RE.search(line)
+        if not match:
+            continue
+        for token in _NAME_SPLIT_RE.split(match.group(1)):
+            token = re.sub(r"[（(].*?[)）]", "", token)  # 去掉括号补充说明
+            token = token.replace("疑似", "").strip(" 。.；;1-9")
+            token = re.sub(r"^(可能是|或是|还有)", "", token)
+            if re.search(r"无法|不能|不确定|未知", token):
+                continue
+            if 2 <= len(token) <= 15:
+                names.append(token)
+        break  # 只取第一条疑似名行
+    return names[:3]
+
+
+def _cache_suspected_names(thread_id: str | None, vl_result: str) -> list[str]:
+    names = _extract_suspected_names(vl_result)
+    if thread_id:
+        _SUSPECTED_NAME_CACHE[thread_id] = names
+    return names
+
+
+def _get_suspected_names(thread_id: str | None) -> list[str]:
+    if not thread_id:
+        return []
+    return _SUSPECTED_NAME_CACHE.get(thread_id, [])
+
+
 # ---------------------------------------------------------------------------
 # 网络错误重试机制：只对临时性故障重试，业务错误直接抛出
 # ---------------------------------------------------------------------------
@@ -231,17 +280,26 @@ async def rag_search(query: str, config: RunnableConfig) -> str:
         return "错误：数据库连接不可用"
 
     try:
+        # 组合查询：VL 提取的疑似病名 + 症状描述（病名信号可显著矫正纯症状检索的排序）
+        suspected_names = _get_suspected_names(_get_thread_id(config))
+        extra_queries: list[str] = []
+        for name in suspected_names[:2]:
+            extra_queries.append(f"疑似{name}。{query}")
+        extra_queries.extend(suspected_names[:3])
+
         # search_pest_knowledge 是同步函数，放到线程池执行
         # 网络错误（Milvus 连接超时等）自动重试 3 次
         matches, error = await _retry_on_network_error(
-            lambda: asyncio.to_thread(search_pest_knowledge, db, query),
+            lambda: asyncio.to_thread(
+                search_pest_knowledge, db, query, extra_queries=extra_queries
+            ),
             tool_name="rag_search",
         )
         if error:
             return f"病虫害知识库检索失败：{error}"
         if not matches:
-            return "未在本地病虫害知识库中找到匹配结果。"
-        if not is_confident_match(matches, query):
+            return "未在本地病虫害知识库找到匹配结果。"
+        if not is_confident_match(matches, query, extracted_pest_names=suspected_names):
             # 返回结果但标注置信度不足
             result = format_matches_for_prompt(matches)
             return f"以下匹配结果置信度不足，仅供参考：\n{result}"
@@ -346,6 +404,11 @@ async def analyze_image(query: str, config: RunnableConfig) -> str:
             lambda: analyze_image_with_qwen(query, images, observation_only=True),
             tool_name="analyze_image",
         )
+        if result:
+            # 缓存 VL 提取的疑似病名，供后续 rag_search 构造组合查询
+            names = _cache_suspected_names(_get_thread_id(config), result)
+            if names:
+                logger.info("analyze_image 提取疑似病名: %s", "、".join(names))
         return result or "图片分析未返回有效结果。"
     except RETRYABLE_ERRORS as exc:
         logger.warning("analyze_image 重试3次后仍失败: %s", exc)
