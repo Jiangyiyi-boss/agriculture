@@ -2413,7 +2413,8 @@ onBeforeUnmount(() => {
 .expert-workspace {
   flex: 1 1 0;
   min-height: 0;
-  overflow: hidden;          /* 兜底防溢出 */
+  overflow-y: auto;          /* 纵向滚动，不裁切角标 */
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
 }
