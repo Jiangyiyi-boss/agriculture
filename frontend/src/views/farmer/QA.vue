@@ -531,6 +531,9 @@ const imageInput = ref<HTMLInputElement | null>(null)
 const selectedImageFiles = ref<File[]>([])
 const aiSending = ref(false)
 const aiAbortController = ref<AbortController | null>(null)
+// 用户主动点停止按钮标记：区分"主动停止"和"离开页面被动断开"
+// 只有主动停止才提示"已停止生成"，离开页面静默（后端会继续跑）
+const userStoppedAi = ref(false)
 const aiMessages = ref<AiMessage[]>([])
 const aiConversations = ref<AiConversation[]>([])
 const activeConversationId = ref<string | null>(null)
@@ -862,6 +865,7 @@ function getImagePreviewUrl(file: File): string {
 }
 
 function stopAiMessage() {
+  userStoppedAi.value = true
   aiAbortController.value?.abort()
 }
 
@@ -992,16 +996,21 @@ async function sendAiMessage() {
   } catch (error: any) {
     const aiMessage = aiMessages.value.find(message => message.id === aiMessageId)
     if (controller.signal.aborted || error?.name === 'AbortError') {
-      if (aiMessage) aiMessage.content = aiMessage.content
-        ? `${aiMessage.content}\n\n已停止生成。`
-        : '已停止生成。'
-      ElMessage.info('已停止生成')
+      if (userStoppedAi.value) {
+        // 用户主动点停止按钮：提示已停止
+        if (aiMessage) aiMessage.content = aiMessage.content
+          ? `${aiMessage.content}\n\n已停止生成。`
+          : '已停止生成。'
+        ElMessage.info('已停止生成')
+      }
+      // 离开页面被动断开：静默，后端会继续跑完，回来能看完整答案
     } else {
       if (aiMessage) aiMessage.content = `抱歉，${error.message || 'AI 问答暂时不可用'}`
       ElMessage.error(error.message || 'AI 问答暂时不可用')
     }
   } finally {
     aiSending.value = false
+    userStoppedAi.value = false
     if (aiAbortController.value === controller) aiAbortController.value = null
   }
 }
