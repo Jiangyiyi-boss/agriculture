@@ -1935,7 +1935,7 @@ onBeforeUnmount(() => {
 
 .user-msg-actions {
   position: absolute;
-  bottom: -28px;
+  bottom: 4px;
   right: 4px;
   display: flex;
   gap: 6px;
