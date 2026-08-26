@@ -183,6 +183,8 @@ export const api = {
   getAIConversations: () => http.get('/ai/conversations').then(r => r.data),
   getAIMessages: (conversationId: number | string) =>
     http.get(`/ai/conversations/${conversationId}/messages`).then(r => r.data),
+  getConversationTaskStatus: (conversationId: number | string) =>
+    http.get(`/ai/conversations/${conversationId}/task-status`).then(r => r.data),
   deleteAIConversation: (conversationId: number | string) =>
     http.delete(`/ai/conversations/${conversationId}`).then(r => r.data),
   streamAIChat: (data: {

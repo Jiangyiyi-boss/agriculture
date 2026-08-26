@@ -12,10 +12,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.agents.graph.graph import run_agent_stream
+from app.agents.graph.graph import (
+    get_task_status,
+    run_agent_background,
+    stream_agent_events,
+)
 from app.agents.graph import graph as graph_module
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.core.security import get_current_user
 from app.core.timezone import now_china
 from app.models import AIConversation, AIMessage, User
@@ -117,6 +121,22 @@ def list_messages(conversation_id: int, current_user: User = Depends(get_current
     ).order_by(AIMessage.created_at.asc()).all()
 
 
+@router.get("/conversations/{conversation_id}/task-status")
+def get_conversation_task_status(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user),
+):
+    """查询某个会话的后台 agent 任务状态。
+
+    前端用途：用户切页面回到 AI 问答页恢复会话时，调这个接口判断：
+    - 若 status=running：后台任务还在跑，前端显示"AI 正在思考..."，
+      并轮询这个接口，等任务跑完后刷新消息列表。
+    - 若 status=done 或 unknown：任务已结束，直接 GET messages 拉历史即可。
+    """
+    task_id = f"{current_user.id}:{conversation_id}"
+    return get_task_status(task_id)
+
+
 @router.delete("/conversations/{conversation_id}")
 async def delete_conversation(conversation_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     conversation = db.query(AIConversation).filter(
@@ -185,13 +205,27 @@ async def chat_stream(
             "agent_type": AGENT_TYPE,
         })
         try:
-            async for event in run_agent_stream(
-                db=db,
-                user=current_user,
-                conversation_id=conversation.id,
-                question=question,
-                images=image_payloads,
-            ):
+            # 启动后台 agent 任务（独立 db session，不受 HTTP 生命周期影响）
+            # HTTP 断开后，后台任务继续跑完，把答案落库到 AIMessage 表，
+            # 用户切页面回来后 GET /conversations/{id}/messages 能拉到完整答案。
+            background_db = SessionLocal()
+            try:
+                task_id = await run_agent_background(
+                    db=background_db,
+                    user=current_user,
+                    conversation_id=conversation.id,
+                    question=question,
+                    images=image_payloads,
+                    user_message_id=user_message.id,
+                )
+            except Exception:
+                background_db.close()
+                raise
+
+            # 订阅后台任务的事件流
+            # HTTP 断开 → generate 协程被取消 → stream_agent_events 也被取消，
+            # 但后台任务（_runner）仍在跑，跑完落库。
+            async for event in stream_agent_events(task_id):
                 evt = event.get("event", "")
                 data = event.get("data", {})
 
@@ -204,39 +238,19 @@ async def chat_stream(
                     answer = data.get("answer", answer)
                     sources = data.get("sources", [])
                 elif evt == "error":
-                    raise RuntimeError(data.get("detail", "AI 问答暂时不可用"))
+                    detail = data.get("detail", "AI 问答暂时不可用")
+                    yield _sse("error", {"detail": detail})
+                    return
 
-            assistant_message = AIMessage(
-                conversation_id=conversation.id,
-                user_id=current_user.id,
-                role="assistant",
-                content=answer,
-                sources=json.dumps(sources, ensure_ascii=False) if sources else None,
-            )
-            conversation.updated_at = now_china()
-            db.add(assistant_message)
-            db.commit()
-            db.refresh(assistant_message)
-
-            # 短期/长期记忆由 LangGraph checkpointer + langmem 工具自动管理，
-            # 无需手动存取
-
+            # 订阅正常结束：后台任务已完成并落库
+            # 查一下落库的 assistant message id（用于前端操作）
+            status = get_task_status(task_id)
             yield _sse("done", {
-                "message_id": assistant_message.id,
                 "agent_type": AGENT_TYPE,
-                "sources": sources,
+                "sources": sources or status.get("sources", []),
             })
         except Exception as error:
-            db.rollback()
             detail = str(error) or "AI 问答暂时不可用"
-            assistant_message = AIMessage(
-                conversation_id=conversation.id,
-                user_id=current_user.id,
-                role="assistant",
-                content=f"抱歉，{detail}",
-            )
-            db.add(assistant_message)
-            db.commit()
             yield _sse("error", {"detail": detail})
 
     return StreamingResponse(generate(), media_type="text/event-stream")

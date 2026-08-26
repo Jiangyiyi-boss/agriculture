@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { api } from '@/api/client'
+import { useAiChatStore } from './aiChat'
 
 export interface AuthUser {
   id: number
@@ -77,6 +78,8 @@ export const useAuthStore = defineStore('auth', () => {
   function logout() {
     setToken(null)
     user.value = null
+    // 登出时清空 AI 会话记忆，下次登录进来是新会话
+    useAiChatStore().clear()
   }
 
   return { token, user, loading, isLoggedIn, setToken, fetchUser, login, adminLogin, smsLogin, register, logout }

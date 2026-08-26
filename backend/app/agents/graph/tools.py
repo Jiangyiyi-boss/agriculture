@@ -451,6 +451,22 @@ async def rule_engine(query: str, config: RunnableConfig) -> str:
     if not db or not user:
         return "错误：无法获取用户信息或数据库连接。"
 
+    # 缺地区兜底：user.region 为空且问题文本也提取不到地名时，
+    # 不调 rule_engine（拉全国全表是负优化，返回一堆全国通用作物，
+    # LLM 反而拿不到聚焦信息还要再调 web_search，多一轮推理更慢）。
+    # 改为明确告知 LLM 地区缺失，让它用月份+常识直接答，末尾引导用户报地名。
+    from app.rag.planting_retriever import extract_region_from_question
+    user_region = getattr(user, "region", "") or ""
+    question_region = extract_region_from_question(query, db, user=user)
+    if not user_region and not (question_region and question_region.province):
+        logger.info("rule_engine 跳过：user.region 空 且 问题文本无地名 query=%s", query[:50])
+        return (
+            "未获取到您的地区信息，无法查询当地土壤和作物适配数据。"
+            "请基于当前月份和通用作物常识直接回答用户，"
+            "并建议用户在问题中告知所在地区（如\"湖南西瓜怎么种\"）或去\"我的资料\"补全地区，"
+            "以便下次给出针对性的种植方案（含土壤适配、精确株数、亩产参考等）。"
+        )
+
     try:
         # MySQL 查询可能超时，网络错误自动重试 3 次
         result = await _retry_on_network_error(

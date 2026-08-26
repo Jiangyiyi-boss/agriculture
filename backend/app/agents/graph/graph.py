@@ -44,6 +44,9 @@ SYSTEM_PROMPT = """你是慧农宝的 AI 智能助手，面向农户提供农业
 2. 病虫害诊断 → 将 analyze_image 返回的症状描述作为 rag_search 的查询依据，
    用知识库结果交叉验证图片识别，禁止仅凭图片就下诊断结论；不够再调用 web_search 补充
 3. 种植计划（种什么/怎么种/轮作）→ 先调用 rule_engine，再调用 web_search 补充
+   - 若 rule_engine 返回"未获取到您的地区信息"，说明用户未填资料且问题里没带地名，
+     此时不要重复调 rule_engine，直接用当前月份+通用作物常识回答用户，
+     末尾建议用户在问题中告知地区或去"我的资料"补全地区
 4. 通用知识（农药用法/施肥/农技）→ 调用 web_search
    - 若用户上传了农资产品图片（农药/化肥包装），先将 analyze_image 识别出的产品名称
      作为 web_search 的查询依据，再基于搜索结果回答用法用量
@@ -397,4 +400,172 @@ async def run_agent_stream(
     }
 
 
-__all__ = ["run_agent_stream"]
+# ---------------------------------------------------------------------------
+# 后台任务 + 事件队列：支持断点续传
+# ---------------------------------------------------------------------------
+
+# task_id → 事件队列 + 任务状态
+# 每个后台 agent 任务跑起来后，会把 SSE 事件 push 到 asyncio.Queue，
+# HTTP 层订阅这个队列；HTTP 断开后任务继续跑，跑完落库 AIMessage。
+_running_tasks: dict[str, dict[str, Any]] = {}
+
+
+def _make_task_id(user_id: int, conversation_id: int) -> str:
+    return f"{user_id}:{conversation_id}"
+
+
+async def run_agent_background(
+    *,
+    db,
+    user,
+    conversation_id: int,
+    question: str,
+    images: list[dict],
+    user_message_id: int | None = None,
+) -> str:
+    """后台跑 agent，跑完把答案落库到 AIMessage 表。
+
+    不返回事件流（调用方拿不到流式输出），只负责"跑完 + 落库"。
+    事件流由 run_agent_stream_to_queue 产出，订阅方各自拿。
+
+    返回 task_id（用于 HTTP 层订阅/查询状态）。
+    """
+    task_id = _make_task_id(user.id, conversation_id)
+
+    # 复用 run_agent_stream 的核心逻辑，但事件 push 到队列而不是 yield
+    queue: asyncio.Queue = asyncio.Queue()
+    _running_tasks[task_id] = {
+        "queue": queue,
+        "status": "running",
+        "answer": "",
+        "sources": [],
+    }
+
+    async def _runner():
+        """实际跑 agent 的协程，跑完更新状态 + 落库。"""
+        answer = ""
+        sources: list[dict] = []
+        try:
+            async for event in run_agent_stream(
+                db=db,
+                user=user,
+                conversation_id=conversation_id,
+                question=question,
+                images=images,
+            ):
+                evt = event.get("event", "")
+                data = event.get("data", {})
+                # push 给订阅方（如果还在订阅）
+                try:
+                    queue.put_nowait(event)
+                except asyncio.QueueFull:
+                    pass
+                if evt == "chunk":
+                    answer += data.get("content", "")
+                elif evt == "done":
+                    answer = data.get("answer", answer)
+                    sources = data.get("sources", [])
+                elif evt == "error":
+                    # 异常时也落库一条错误消息，用户回来能看到
+                    detail = data.get("detail", "AI 问答暂时不可用")
+                    answer = f"抱歉，{detail}"
+        except Exception as exc:
+            logger.exception("后台 agent 任务异常 task_id=%s", task_id)
+            answer = f"抱歉，AI 问答暂时不可用：{exc}"
+            try:
+                queue.put_nowait({"event": "error", "data": {"detail": str(exc)}})
+            except asyncio.QueueFull:
+                pass
+        finally:
+            # 标记完成，通知订阅方结束
+            _running_tasks[task_id]["status"] = "done"
+            _running_tasks[task_id]["answer"] = answer
+            _running_tasks[task_id]["sources"] = sources
+            try:
+                queue.put_nowait({"event": "_task_done", "data": {}})
+            except asyncio.QueueFull:
+                pass
+            # 落库 AIMessage（用户离开也能拉到答案）
+            try:
+                await _persist_assistant_message(db, conversation_id, user.id, answer, sources, user_message_id)
+            except Exception:
+                logger.exception("落库 assistant message 失败 task_id=%s", task_id)
+            # 一段时间后清理任务条目（避免内存泄漏）
+            asyncio.get_event_loop().call_later(
+                300, lambda: _running_tasks.pop(task_id, None)
+            )
+
+    # 启动后台任务，不 await（立即返回 task_id）
+    asyncio.create_task(_runner())
+    return task_id
+
+
+async def _persist_assistant_message(
+    db, conversation_id: int, user_id: int, answer: str,
+    sources: list[dict], user_message_id: int | None,
+) -> None:
+    """把 agent 的最终答案写入 AIMessage 表。
+
+    若该会话已有 assistant 消息（比如重试场景），追加而非覆盖。
+    """
+    import json
+    from app.models import AIMessage
+    from app.core.timezone import now_china
+
+    # 不查重，直接追加（断点续传场景下，用户离开再回来拉消息能看到这条）
+    msg = AIMessage(
+        conversation_id=conversation_id,
+        user_id=user_id,
+        role="assistant",
+        content=answer or "（AI 未生成有效回答）",
+        sources=json.dumps(sources, ensure_ascii=False) if sources else None,
+    )
+    db.add(msg)
+    db.commit()
+
+
+async def stream_agent_events(task_id: str) -> AsyncGenerator[dict[str, Any], None]:
+    """订阅后台任务的事件流。
+
+    HTTP 层调用这个来读 SSE 事件。
+    HTTP 断开（订阅方消失）不影响后台任务，任务继续跑完落库。
+    """
+    task_info = _running_tasks.get(task_id)
+    if not task_info:
+        # 任务已结束并被清理，或不存在 → 直接返回 done
+        yield {"event": "_task_done", "data": {}}
+        return
+
+    queue: asyncio.Queue = task_info["queue"]
+    try:
+        while True:
+            # 用 wait_for 避免无限阻塞，定期检查任务状态
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                # 队列空，检查任务是否已结束
+                if task_info["status"] == "done":
+                    break
+                continue
+            if event.get("event") == "_task_done":
+                break
+            yield event
+    except asyncio.CancelledError:
+        # HTTP 订阅方断开（取消订阅），不影响后台任务
+        logger.info("订阅方断开 task_id=%s，后台任务继续", task_id)
+        raise
+
+
+def get_task_status(task_id: str) -> dict[str, Any]:
+    """查询后台任务状态（用于前端判断是否还在跑）。"""
+    task_info = _running_tasks.get(task_id)
+    if not task_info:
+        return {"status": "unknown", "answer": "", "sources": []}
+    return {
+        "status": task_info["status"],
+        "answer": task_info["answer"],
+        "sources": task_info["sources"],
+    }
+
+
+__all__ = ["run_agent_stream", "run_agent_background", "stream_agent_events", "get_task_status"]

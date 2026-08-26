@@ -160,11 +160,8 @@
                   </details>
 
                   <div v-if="message.role === 'user' && editingMessageId !== message.id" class="user-msg-actions">
-                    <button type="button" title="复制" @click="copyMessageContent(message)">
-                      <el-icon :size="14"><CopyDocument /></el-icon>
-                    </button>
                     <button type="button" title="编辑后重发" @click="startEditMessage(message)">
-                      <el-icon :size="14"><EditPen /></el-icon>
+                      <el-icon :size="16"><EditPen /></el-icon>
                     </button>
                   </div>
                 </div>
@@ -461,7 +458,6 @@ import {
   ArrowRight,
   ChatDotRound,
   CloseBold,
-  CopyDocument,
   Delete,
   EditPen,
   Picture,
@@ -472,6 +468,7 @@ import {
 } from '@element-plus/icons-vue'
 import { api } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
+import { useAiChatStore } from '@/stores/aiChat'
 import { useNotificationStore } from '@/stores/notification'
 import SproutIcon from '@/components/SproutIcon.vue'
 
@@ -621,6 +618,8 @@ function startNewConversation() {
   aiMessages.value = []
   input.value = ''
   clearSelectedImage()
+  // 清掉 store 里的会话记忆，标记用户主动新建会话
+  useAiChatStore().clear()
 }
 
 async function confirmDeleteConversation(conversationId: string) {
@@ -651,19 +650,9 @@ async function confirmDeleteConversation(conversationId: string) {
   ElMessage.success('对话已删除')
 }
 
-// 农户消息：复制 / 编辑后重发（追加新消息）
+// 农户消息：编辑后重发（追加新消息）
 const editingMessageId = ref<string | null>(null)
 const editingContent = ref('')
-
-function copyMessageContent(message: AiMessage) {
-  const text = message.content || ''
-  if (!text) return
-  navigator.clipboard.writeText(text).then(() => {
-    ElMessage.success('已复制')
-  }).catch(() => {
-    ElMessage.error('复制失败')
-  })
-}
 
 function startEditMessage(message: AiMessage) {
   editingMessageId.value = message.id
@@ -687,8 +676,19 @@ async function selectConversation(conversationId: string) {
   const conversation = aiConversations.value.find(item => item.id === conversationId)
   if (!conversation) return
   activeConversationId.value = conversation.id
+  // 同步到 store，切页面回来能恢复
+  useAiChatStore().setConversation(conversation.id)
+  await loadMessagesWithTaskCheck(conversation.id)
+}
+
+// 加载会话消息：若后台 agent 任务还在跑，先显示"AI 正在思考"占位 + 轮询，
+// 任务跑完后刷新消息列表（断点续传场景）
+let taskStatusPollingTimer: number | null = null
+
+async function loadMessagesWithTaskCheck(conversationId: string) {
   try {
-    const messages = await api.getAIMessages(conversation.id)
+    // 先拉已落库的消息（包含用户问题 + 上次已完成的 AI 回答）
+    const messages = await api.getAIMessages(conversationId)
     aiMessages.value = messages.map((message: any) => ({
       id: String(message.id),
       role: message.role === 'assistant' ? 'ai' : 'user',
@@ -698,8 +698,48 @@ async function selectConversation(conversationId: string) {
         : undefined,
       sources: parseSources(message.sources),
     }))
-    // 历史消息加载完成后滚到最新一条
     nextTick(() => scrollAiChatToBottom())
+
+    // 检查后台任务状态：若还在跑，加占位气泡 + 轮询
+    const taskStatus = await api.getConversationTaskStatus(conversationId)
+    if (taskStatus && taskStatus.status === 'running') {
+      // 占位 AI 气泡，等任务跑完替换
+      const placeholderId = createId()
+      aiMessages.value.push({
+        id: placeholderId,
+        role: 'ai',
+        content: '',
+        statusText: 'AI 正在思考...',
+      })
+      nextTick(() => scrollAiChatToBottom())
+
+      // 轮询：每 2 秒查一次，跑完刷新
+      taskStatusPollingTimer = window.setInterval(async () => {
+        try {
+          const status = await api.getConversationTaskStatus(conversationId)
+          if (!status || status.status !== 'running') {
+            // 任务结束 → 停轮询 + 重新拉消息
+            if (taskStatusPollingTimer) {
+              clearInterval(taskStatusPollingTimer)
+              taskStatusPollingTimer = null
+            }
+            const fresh = await api.getAIMessages(conversationId)
+            aiMessages.value = fresh.map((message: any) => ({
+              id: String(message.id),
+              role: message.role === 'assistant' ? 'ai' : 'user',
+              content: message.content,
+              imageUrls: message.image_urls
+                ? message.image_urls.split(',').filter(Boolean)
+                : undefined,
+              sources: parseSources(message.sources),
+            }))
+            nextTick(() => scrollAiChatToBottom())
+          }
+        } catch {
+          // 轮询失败忽略，下次重试
+        }
+      }, 2000)
+    }
   } catch (error: any) {
     ElMessage.error(error.response?.data?.detail || '历史消息加载失败')
   }
@@ -840,6 +880,8 @@ async function fetchAIConversations() {
 function handleStreamEvent(event: string, data: any, aiMessageId: string) {
   if (event === 'meta') {
     activeConversationId.value = String(data.conversation_id)
+    // 新对话创建后拿到 id，同步到 store
+    useAiChatStore().setConversation(String(data.conversation_id))
     upsertConversation(String(data.conversation_id), data.conversation_title || '新对话')
     return
   }
@@ -1254,11 +1296,31 @@ async function openHistory(c: any) {
 
 onMounted(async () => {
   await Promise.all([fetchAIConversations(), fetchExperts(), fetchArchive()])
+  // 同一次登录内切页面再回到 AI 问答：自动恢复上次会话（除非用户主动新建或登出）
+  // 仅当默认进入 AI 模式（无 query 参数指定其他模式）时才恢复
+  const aiChatStore = useAiChatStore()
+  const route = useRoute()
+  const requestedMode = route.query.mode as string | undefined
+  if (aiChatStore.activeConversationId && (!requestedMode || requestedMode === 'ai')) {
+    const target = aiConversations.value.find(item => item.id === aiChatStore.activeConversationId)
+    if (target) {
+      // 进入 AI 问答模式并加载历史消息
+      mode.value = 'ai'
+      await selectConversation(target.id)
+    } else {
+      // store 里的会话已被删除，清掉
+      aiChatStore.clear()
+    }
+  }
 })
 
 onBeforeUnmount(() => {
   aiAbortController.value?.abort()
   stopPolling()
+  if (taskStatusPollingTimer) {
+    clearInterval(taskStatusPollingTimer)
+    taskStatusPollingTimer = null
+  }
 })
 </script>
 
@@ -1853,13 +1915,12 @@ onBeforeUnmount(() => {
 
 .user-msg-actions {
   position: absolute;
-  bottom: -30px;
+  bottom: -28px;
   right: 4px;
   display: flex;
   gap: 6px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .msg-user:hover .user-msg-actions {
@@ -1871,8 +1932,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   border: 0;
   border-radius: 8px;
   background: rgba(6, 21, 13, 0.06);
@@ -2937,6 +2998,9 @@ onBeforeUnmount(() => {
   border-color: var(--farm-green);
   color: var(--farm-green);
   background: #f6fbf7;
+}
+.archive-entry-badge {
+  overflow: visible;
 }
 .archive-entry-badge :deep(.el-badge__content) {
   border: 0;
