@@ -37,6 +37,9 @@
         </button>
       </nav>
 
+      <!-- 角标用 fixed 定位，放在 expert-workspace 外面，避免被 overflow:hidden 裁切 -->
+      <span v-if="mode === 'expert' && totalUnreadForBadge" class="archive-fixed-badge">{{ totalUnreadForBadge > 99 ? '99+' : totalUnreadForBadge }}</span>
+
       <section v-if="mode === 'ai'" class="ai-workspace">
         <aside class="chat-history">
           <div class="history-header">
@@ -227,17 +230,10 @@
         <!-- 列表视图 -->
         <template v-if="expertView === 'list'">
           <div class="expert-section-heading expert-heading-right">
-            <el-badge
-              :value="totalUnreadForBadge"
-              :max="99"
-              :hidden="!totalUnreadForBadge"
-              class="archive-entry-badge"
-            >
-              <button class="archive-entry-btn" type="button" @click="openArchive">
-                <el-icon :size="18"><ChatDotRound /></el-icon>
-                我的问答
-              </button>
-            </el-badge>
+            <button class="archive-entry-btn" type="button" @click="openArchive">
+              <el-icon :size="18"><ChatDotRound /></el-icon>
+              我的问答
+            </button>
           </div>
 
           <div v-if="experts.length" class="expert-cards">
@@ -3006,6 +3002,24 @@ onBeforeUnmount(() => {
 .archive-entry-badge :deep(.el-badge__content) {
   border: 0;
   background: #f56c6c;
+}
+/* 角标用 fixed 定位，放在 expert-workspace 外面，避免被 overflow 裁切 */
+.archive-fixed-badge {
+  position: fixed;
+  top: 120px;
+  right: 24px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  color: #fff;
+  background: #f56c6c;
+  border-radius: 9px;
+  text-align: center;
+  z-index: 100;
+  pointer-events: none;
 }
 .archive-badge {
   min-width: 18px;
