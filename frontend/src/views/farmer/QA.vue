@@ -37,8 +37,12 @@
         </button>
       </nav>
 
-      <!-- 角标用 fixed 定位，放在 expert-workspace 外面，避免被 overflow:hidden 裁切 -->
-      <span v-if="mode === 'expert' && totalUnreadForBadge" class="archive-fixed-badge">{{ totalUnreadForBadge > 99 ? '99+' : totalUnreadForBadge }}</span>
+      <!-- 角标用 fixed 定位，JS 动态计算贴到"我的问答"按钮右上角 -->
+      <span
+        v-if="mode === 'expert' && totalUnreadForBadge"
+        class="archive-fixed-badge"
+        :style="badgeStyle"
+      >{{ totalUnreadForBadge > 99 ? '99+' : totalUnreadForBadge }}</span>
 
       <section v-if="mode === 'ai'" class="ai-workspace">
         <aside class="chat-history">
@@ -230,7 +234,7 @@
         <!-- 列表视图 -->
         <template v-if="expertView === 'list'">
           <div class="expert-section-heading expert-heading-right">
-            <button class="archive-entry-btn" type="button" @click="openArchive">
+            <button ref="archiveBtnRef" class="archive-entry-btn" type="button" @click="openArchive">
               <el-icon :size="18"><ChatDotRound /></el-icon>
               我的问答
             </button>
@@ -492,6 +496,20 @@ type AiConversation = {
 const route = useRoute()
 const notificationStore = useNotificationStore()
 
+// 角标动态定位：用 fixed 定位贴到"我的问答"按钮右上角，避免被 overflow:hidden 裁切
+const archiveBtnRef = ref<HTMLElement | null>(null)
+const badgeStyle = ref({ top: '0px', right: '0px' })
+
+function updateBadgePosition() {
+  const btn = archiveBtnRef.value
+  if (!btn) return
+  const rect = btn.getBoundingClientRect()
+  badgeStyle.value = {
+    top: `${rect.top - 8}px`,
+    right: `${window.innerWidth - rect.right - 4}px`,
+  }
+}
+
 /**
  * 从 query.mode 推导初始问答模式：
  *   - ?mode=ai     → 直接进入「AI 智能问答」
@@ -585,6 +603,8 @@ function enterMode(nextMode: Exclude<AskMode, null>) {
     activeExpert.value = null
     selectedConsultation.value = null
     consultationMessages.value = []
+    // 切换到专家模式后，按钮渲染完成时重新计算角标位置
+    nextTick(() => updateBadgePosition())
   }
 }
 
@@ -1308,6 +1328,9 @@ onMounted(async () => {
       aiChatStore.clear()
     }
   }
+  // 角标定位：DOM 渲染完后计算按钮位置
+  nextTick(() => updateBadgePosition())
+  window.addEventListener('resize', updateBadgePosition)
 })
 
 onBeforeUnmount(() => {
@@ -1317,6 +1340,7 @@ onBeforeUnmount(() => {
     clearInterval(taskStatusPollingTimer)
     taskStatusPollingTimer = null
   }
+  window.removeEventListener('resize', updateBadgePosition)
 })
 </script>
 
@@ -3003,11 +3027,9 @@ onBeforeUnmount(() => {
   border: 0;
   background: #f56c6c;
 }
-/* 角标用 fixed 定位，放在 expert-workspace 外面，避免被 overflow 裁切 */
+/* 角标用 fixed 定位，JS 动态计算贴到"我的问答"按钮右上角，避免被 overflow 裁切 */
 .archive-fixed-badge {
   position: fixed;
-  top: 120px;
-  right: 24px;
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
