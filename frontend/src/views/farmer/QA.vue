@@ -166,11 +166,12 @@
                     </a>
                   </details>
 
-                  <div v-if="message.role === 'user' && editingMessageId !== message.id" class="user-msg-actions">
-                    <button type="button" title="编辑后重发" @click="startEditMessage(message)">
-                      <el-icon :size="16"><EditPen /></el-icon>
-                    </button>
-                  </div>
+                </div>
+                <!-- 编辑按钮移到气泡外面，紧贴气泡下方，不受 msg-bubble overflow 影响 -->
+                <div v-if="message.role === 'user' && editingMessageId !== message.id" class="user-msg-actions">
+                  <button type="button" title="编辑后重发" @click="startEditMessage(message)">
+                    <el-icon :size="16"><EditPen /></el-icon>
+                  </button>
                 </div>
               </div>
             </template>
@@ -451,7 +452,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
@@ -494,6 +495,7 @@ type AiConversation = {
 }
 
 const route = useRoute()
+const router = useRouter()
 const notificationStore = useNotificationStore()
 
 // 角标动态定位：用 fixed 定位贴到"我的问答"按钮右上角，避免被 overflow:hidden 裁切
@@ -1313,22 +1315,23 @@ async function openHistory(c: any) {
 onMounted(async () => {
   await Promise.all([fetchAIConversations(), fetchExperts(), fetchArchive()])
   // 同一次登录内切页面再回到 AI 问答：自动恢复上次会话（除非用户主动新建或登出）
-  // 仅当默认进入 AI 模式（无 query 参数指定其他模式）时才恢复
   const aiChatStore = useAiChatStore()
   const route = useRoute()
   const requestedMode = route.query.mode as string | undefined
   if (aiChatStore.activeConversationId && (!requestedMode || requestedMode === 'ai')) {
     const target = aiConversations.value.find(item => item.id === aiChatStore.activeConversationId)
     if (target) {
-      // 进入 AI 问答模式并加载历史消息
+      // 关键：同步更新 URL 带 ?mode=ai，否则 watch 会把 mode 清成 null 覆盖恢复
+      if (!requestedMode) {
+        router.replace({ query: { ...route.query, mode: 'ai' } })
+      }
       mode.value = 'ai'
       await selectConversation(target.id)
     } else {
-      // store 里的会话已被删除，清掉
       aiChatStore.clear()
     }
   }
-  // 角标定位：DOM 渲染完后计算按钮位置
+  // 角标定位
   nextTick(() => updateBadgePosition())
   window.addEventListener('resize', updateBadgePosition)
 })
@@ -1928,15 +1931,16 @@ onBeforeUnmount(() => {
   color: #06150d;
 }
 
-/* 农户消息 hover 操作条（复制 / 编辑重发） */
+/* 农户消息操作条（编辑重发）—— 放在气泡外面紧贴下方 */
 .msg-user {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .user-msg-actions {
-  position: absolute;
-  bottom: 4px;
-  right: 4px;
+  margin-top: 6px;
   display: flex;
   gap: 6px;
   opacity: 1;

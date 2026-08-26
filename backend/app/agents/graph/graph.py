@@ -420,69 +420,99 @@ async def run_agent_background(
     images: list[dict],
     user_message_id: int | None = None,
 ) -> str:
-    """后台跑 agent，跑完把答案落库到 AIMessage 表。
+    """断点续传：用 ainvoke 非流式跑 agent，跑完落库。
 
-    HTTP 断开后任务继续跑，用户切页面回来 GET messages 能拉到完整答案。
-    返回 task_id（用于 HTTP 层订阅/查询状态）。
+    与 run_agent_stream（流式）独立，互不影响。
+    HTTP 断开后此任务继续跑完，用户切页面回来 GET messages 拉到完整答案。
+    Task 对象存全局 dict，避免被 GC 或 HTTP 生命周期连带 cancel。
     """
     task_id = _make_task_id(user.id, conversation_id)
-    queue: asyncio.Queue = asyncio.Queue()
     _running_tasks[task_id] = {
-        "queue": queue,
         "status": "running",
         "answer": "",
         "sources": [],
+        "task": None,  # 持有 asyncio.Task 引用，避免 GC
     }
 
     async def _runner():
         answer = ""
         sources: list[dict] = []
         try:
-            async for event in run_agent_stream(
-                db=db,
-                user=user,
-                conversation_id=conversation_id,
-                question=question,
-                images=images,
-            ):
-                evt = event.get("event", "")
-                data = event.get("data", {})
-                try:
-                    queue.put_nowait(event)
-                except asyncio.QueueFull:
-                    pass
-                if evt == "chunk":
-                    answer += data.get("content", "")
-                elif evt == "done":
-                    answer = data.get("answer", answer)
-                    sources = data.get("sources", [])
-                elif evt == "error":
-                    detail = data.get("detail", "AI 问答暂时不可用")
-                    answer = f"抱歉，{detail}"
+            agent = await _get_agent()
+            thread_id = f"{user.id}:{conversation_id}"
+            config: RunnableConfig = {
+                "configurable": {
+                    "thread_id": thread_id,
+                    "user_id": user.id,
+                    "db": db,
+                    "user": user,
+                },
+                "recursion_limit": 15,
+            }
+            # 清理上轮残留的孤立 tool_calls（与流式路径保持一致）
+            await _sanitize_chat_history(agent, config)
+
+            # 构造用户消息（含图片）
+            content: list[dict[str, Any]] = [{"type": "text", "text": question}]
+            for img in images or []:
+                if img.get("data"):
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": img["data"]},
+                    })
+
+            # 注入当前时间上下文（与流式路径一致）
+            now = now_china()
+            month = now.month
+            season = "春季" if month in (3, 4, 5) else "夏季" if month in (6, 7, 8) else "秋季" if month in (9, 10, 11) else "冬季"
+            context_info = f"\n\n【当前时间：{now.year}年{now.month}月{now.day}日，{season}】"
+            content[0]["text"] = question + context_info
+
+            # ainvoke 非流式调用
+            result = await agent.ainvoke({"messages": [{"role": "user", "content": content}]}, config=config)
+
+            # 从最后一条 AIMessage 提取答案
+            messages = result.get("messages", [])
+            for msg in reversed(messages):
+                if hasattr(msg, "content") and getattr(msg, "type", None) == "ai":
+                    answer = msg.content if isinstance(msg.content, str) else str(msg.content)
+                    break
+            if not answer and messages:
+                last = messages[-1]
+                answer = last.content if hasattr(last, "content") else ""
+
+            # 收集 sources（web_search 工具返回的）
+            # 从 messages 里找 ToolMessage 含 web_search 结果
+            for msg in messages:
+                if getattr(msg, "type", None) == "tool":
+                    content_str = str(getattr(msg, "content", ""))
+                    if "results" in content_str and "url" in content_str:
+                        try:
+                            import json as _json
+                            parsed = _json.loads(content_str)
+                            if isinstance(parsed, dict) and "results" in parsed:
+                                sources.extend(parsed["results"][:5])
+                        except Exception:
+                            pass
+
         except Exception as exc:
             logger.exception("后台 agent 任务异常 task_id=%s", task_id)
             answer = f"抱歉，AI 问答暂时不可用：{exc}"
-            try:
-                queue.put_nowait({"event": "error", "data": {"detail": str(exc)}})
-            except asyncio.QueueFull:
-                pass
         finally:
             _running_tasks[task_id]["status"] = "done"
             _running_tasks[task_id]["answer"] = answer
             _running_tasks[task_id]["sources"] = sources
             try:
-                queue.put_nowait({"event": "_task_done", "data": {}})
-            except asyncio.QueueFull:
-                pass
-            try:
                 await _persist_assistant_message(db, conversation_id, user.id, answer, sources, user_message_id)
             except Exception:
                 logger.exception("落库 assistant message 失败 task_id=%s", task_id)
-            asyncio.get_event_loop().call_later(
-                300, lambda: _running_tasks.pop(task_id, None)
-            )
+            # 5 分钟后清理任务条目
+            loop = asyncio.get_event_loop()
+            loop.call_later(300, lambda: _running_tasks.pop(task_id, None))
 
-    asyncio.create_task(_runner())
+    # 创建后台 Task 并持有引用，避免被 GC
+    task = asyncio.create_task(_runner())
+    _running_tasks[task_id]["task"] = task
     return task_id
 
 
@@ -506,31 +536,13 @@ async def _persist_assistant_message(
 
 
 async def stream_agent_events(task_id: str) -> AsyncGenerator[dict[str, Any], None]:
-    """订阅后台任务的事件流。HTTP 断开不影响后台任务。"""
-    task_info = _running_tasks.get(task_id)
-    if not task_info:
-        yield {"event": "_task_done", "data": {}}
-        return
-
-    queue: asyncio.Queue = task_info["queue"]
-    try:
-        while True:
-            try:
-                event = await asyncio.wait_for(queue.get(), timeout=1.0)
-            except asyncio.TimeoutError:
-                if task_info["status"] == "done":
-                    break
-                continue
-            if event.get("event") == "_task_done":
-                break
-            yield event
-    except asyncio.CancelledError:
-        logger.info("订阅方断开 task_id=%s，后台任务继续", task_id)
-        raise
+    """已废弃：断点续传改用 ainvoke，不再需要订阅事件流。保留空实现避免导入报错。"""
+    return
+    yield  # 让 Python 识别为 async generator
 
 
 def get_task_status(task_id: str) -> dict[str, Any]:
-    """查询后台任务状态。"""
+    """查询后台任务状态（前端轮询用）。"""
     task_info = _running_tasks.get(task_id)
     if not task_info:
         return {"status": "unknown", "answer": "", "sources": []}

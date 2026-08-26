@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
@@ -205,30 +206,16 @@ async def chat_stream(
             "agent_type": AGENT_TYPE,
         })
         try:
-            # 启动后台 agent 任务（独立 db session，不受 HTTP 生命周期影响）
-            # HTTP 断开后，后台任务继续跑完，把答案落库到 AIMessage 表，
-            # 用户切页面回来后 GET /conversations/{id}/messages 能拉到完整答案。
-            background_db = SessionLocal()
-            try:
-                task_id = await run_agent_background(
-                    db=background_db,
-                    user=current_user,
-                    conversation_id=conversation.id,
-                    question=question,
-                    images=image_payloads,
-                    user_message_id=user_message.id,
-                )
-            except Exception:
-                background_db.close()
-                raise
-
-            # 订阅后台任务的事件流
-            # HTTP 断开 → generate 协程被取消 → stream_agent_events 也被取消，
-            # 但后台任务（_runner）仍在跑，跑完落库。
-            async for event in stream_agent_events(task_id):
+            # 正常流式：用户在页面看 AI 边想边打字
+            async for event in run_agent_stream(
+                db=db,
+                user=current_user,
+                conversation_id=conversation.id,
+                question=question,
+                images=image_payloads,
+            ):
                 evt = event.get("event", "")
                 data = event.get("data", {})
-
                 if evt == "status":
                     yield _sse("status", data)
                 elif evt == "chunk":
@@ -238,19 +225,61 @@ async def chat_stream(
                     answer = data.get("answer", answer)
                     sources = data.get("sources", [])
                 elif evt == "error":
-                    detail = data.get("detail", "AI 问答暂时不可用")
-                    yield _sse("error", {"detail": detail})
-                    return
+                    raise RuntimeError(data.get("detail", "AI 问答暂时不可用"))
 
-            # 订阅正常结束：后台任务已完成并落库
-            # 查一下落库的 assistant message id（用于前端操作）
-            status = get_task_status(task_id)
+            # 流式正常完成：落库 AIMessage
+            assistant_message = AIMessage(
+                conversation_id=conversation.id,
+                user_id=current_user.id,
+                role="assistant",
+                content=answer,
+                sources=json.dumps(sources, ensure_ascii=False) if sources else None,
+            )
+            conversation.updated_at = now_china()
+            db.add(assistant_message)
+            db.commit()
+            db.refresh(assistant_message)
+
             yield _sse("done", {
+                "message_id": assistant_message.id,
                 "agent_type": AGENT_TYPE,
-                "sources": sources or status.get("sources", []),
+                "sources": sources,
             })
+        except asyncio.CancelledError:
+            # HTTP 断开（用户切页面）：启动后台 ainvoke 跑完落库
+            # 用独立 db session，不受 HTTP 生命周期影响
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            background_db = SessionLocal()
+            try:
+                await run_agent_background(
+                    db=background_db,
+                    user=current_user,
+                    conversation_id=conversation.id,
+                    question=question,
+                    images=image_payloads,
+                    user_message_id=user_message.id,
+                )
+            except Exception:
+                background_db.close()
+            # 不 re-raise，让协程正常结束（不抛错给 uvicorn）
+            return
         except Exception as error:
             detail = str(error) or "AI 问答暂时不可用"
+            # 流式途中出错也落库一条错误消息
+            try:
+                assistant_message = AIMessage(
+                    conversation_id=conversation.id,
+                    user_id=current_user.id,
+                    role="assistant",
+                    content=f"抱歉，{detail}",
+                )
+                db.add(assistant_message)
+                db.commit()
+            except Exception:
+                db.rollback()
             yield _sse("error", {"detail": detail})
 
     return StreamingResponse(generate(), media_type="text/event-stream")
