@@ -227,6 +227,96 @@ async def _sanitize_chat_history(agent, config: RunnableConfig) -> None:
         return
 
 
+# 短期记忆压缩阈值
+_COMPRESS_THRESHOLD = 50   # 消息超过 50 条触发压缩（约 6 轮工具问答）
+_COMPRESS_KEEP_RECENT = 16  # 保留最近 16 条原文（约 2 轮完整上下文）
+
+
+async def _compress_if_needed(agent, config: RunnableConfig) -> None:
+    """对话消息超过阈值时，将早期消息压缩为摘要，保留最近若干条。
+
+    策略：消息数 > _COMPRESS_THRESHOLD 时：
+    1. 从末尾往前数 _COMPRESS_KEEP_RECENT 条作为"近期"保留
+    2. 找安全切割点（HumanMessage 边界），避免切断 tool_call ↔ ToolMessage 配对
+    3. 提取老消息中的用户提问和 AI 回复文本，调 LLM 生成 300 字摘要
+    4. 用 RemoveMessage 删掉老消息，插入一条 SystemMessage 摘要
+    压缩后：[摘要 SystemMessage] + [最近 K 条原文]
+    """
+    try:
+        state = await agent.aget_state(config)
+    except Exception:
+        return
+
+    values = state.values or {}
+    messages: list = values.get("messages", [])
+    if len(messages) <= _COMPRESS_THRESHOLD:
+        return
+
+    # 找安全切割点：从 len-KEEP 开始，往后挪到 HumanMessage 边界
+    # 避免切断 AIMessage(tool_calls) ↔ ToolMessage 的配对
+    cut_start = len(messages) - _COMPRESS_KEEP_RECENT
+    while cut_start < len(messages):
+        if getattr(messages[cut_start], "type", "") == "human":
+            break
+        cut_start += 1
+
+    old_messages = messages[:cut_start]
+    if len(old_messages) < 10:  # 太少不值得压缩
+        return
+
+    # 提取对话文本（跳过 system、tool、tool_calls 中间消息）
+    conversation_text: list[str] = []
+    for msg in old_messages:
+        msg_type = getattr(msg, "type", "")
+        content = getattr(msg, "content", "")
+        if not content or not isinstance(content, str):
+            continue
+        if msg_type == "human":
+            conversation_text.append(f"用户: {content[:500]}")
+        elif msg_type == "ai" and not getattr(msg, "tool_calls", None):
+            conversation_text.append(f"助手: {content[:500]}")
+
+    if not conversation_text:
+        return
+
+    # 调 LLM 生成摘要
+    summary_prompt = (
+        "请将以下多轮对话历史压缩成一段简洁摘要（300字以内），保留：\n"
+        "1. 用户的关键信息（种植作物、面积、地区、问题描述）\n"
+        "2. AI 的关键诊断结论和防治建议\n"
+        "3. 未解决的问题或待办事项\n\n"
+        f"对话历史：\n{chr(10).join(conversation_text)}\n\n摘要："
+    )
+
+    try:
+        summary_response = await _llm.ainvoke([{"role": "user", "content": summary_prompt}])
+        summary_text = getattr(summary_response, "content", "")
+        if not summary_text:
+            return
+    except Exception as e:
+        logger.warning("生成对话摘要失败，跳过压缩: %s", e)
+        return
+
+    # 删除老消息 + 插入摘要
+    from langchain_core.messages import RemoveMessage, SystemMessage
+
+    remove_and_add: list = [
+        RemoveMessage(id=getattr(msg, "id", ""))
+        for msg in old_messages
+        if getattr(msg, "id", None)
+    ]
+    remove_and_add.append(
+        SystemMessage(content=f"【之前的对话摘要】\n{summary_text}")
+    )
+
+    await agent.aupdate_state(config, {"messages": remove_and_add})
+    logger.info(
+        "对话记忆压缩：%d 条早期消息 → 1 条摘要，保留最近 %d 条",
+        len(old_messages),
+        len(messages) - cut_start,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Streaming entry point
 # ---------------------------------------------------------------------------
@@ -347,6 +437,8 @@ async def run_agent_stream(
         agent = await _get_agent()
         # 清理上轮可能残留的孤立 AIMessage(tool_calls)，避免 INVALID_CHAT_HISTORY
         await _sanitize_chat_history(agent, config)
+        # 短期记忆压缩：消息超 50 条时，早期消息摘要化，保留最近 16 条
+        await _compress_if_needed(agent, config)
         async for event in agent.astream_events(
             {"messages": initial_messages},
             config=config,
@@ -451,6 +543,8 @@ async def run_agent_background(
             }
             # 清理上轮残留的孤立 tool_calls（与流式路径保持一致）
             await _sanitize_chat_history(agent, config)
+            # 短期记忆压缩：与流式路径保持一致
+            await _compress_if_needed(agent, config)
 
             # 构造用户消息（含图片）
             content: list[dict[str, Any]] = [{"type": "text", "text": question}]
