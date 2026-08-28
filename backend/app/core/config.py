@@ -4,17 +4,17 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # 数据库 - MySQL
-    DATABASE_URL: str = "mysql+pymysql://root:qzezgs2022@localhost:3306/pg_agent"
+    # 数据库 - MySQL（密码从 .env 注入，勿硬编码）
+    DATABASE_URL: str = ""
 
     # Redis（开发环境可选，部分功能不可用）
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # PostgreSQL（LangGraph checkpointer + langmem store）
-    PG_URL: str = "postgresql://agr:agr_pwd@localhost:5432/agr_memory"
+    PG_URL: str = ""
 
-    # JWT
-    SECRET_KEY: str = "hui-nong-bao-secret-key-change-in-production-2026"
+    # JWT（密钥从 .env 注入，勿硬编码）
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 120
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7

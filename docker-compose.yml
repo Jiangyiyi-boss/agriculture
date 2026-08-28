@@ -31,7 +31,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: agr
-      POSTGRES_PASSWORD: agr_pwd
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
       POSTGRES_DB: agr_memory
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -72,7 +72,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - MILVUS_HOST=milvus
       - MILVUS_PORT=19530
-      - PG_URL=postgresql://agr:agr_pwd@postgres:5432/agr_memory
+      - PG_URL=postgresql://agr:${PG_PASSWORD}@postgres:5432/agr_memory
       - BGE_M3_DEVICE=cpu
       - BGE_M3_MODEL_PATH=/app/models/bge-m3
     volumes:
